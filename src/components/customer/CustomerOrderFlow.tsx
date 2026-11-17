@@ -1,0 +1,848 @@
+import React, { useState, useId } from 'react';
+import {
+  UploadCloud,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Shield,
+  HelpCircle,
+  Info,
+  ChevronRight,
+  Layers,
+  Zap,
+} from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
+import { Input } from '../ui/Input';
+import { Badge } from '../ui/Badge';
+import { PaymentModal } from './PaymentModal';
+import { parsePageRange } from '../../lib/pageRangeParser';
+import { createOrder } from '../../lib/store';
+import { generateMinimalPdf } from '../../lib/samplePdf';
+import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
+
+interface CustomerOrderFlowProps {
+  shop: Shop;
+  onOrderSubmitted: (order: Order) => void;
+  onViewStatus: (orderId: string) => void;
+  isMobileFree?: boolean; // Desktop widescreen layout
+}
+
+interface UploadedFileInfo {
+  name: string;
+  size: number;
+  dataUrl?: string;
+  detectedPages: number;
+}
+
+export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
+  shop,
+  onOrderSubmitted,
+  onViewStatus,
+  isMobileFree = true,
+}) => {
+  const fileInputId = useId();
+  // Upload State
+  const [file, setFile] = useState<UploadedFileInfo | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Configuration State
+  const [copies, setCopies] = useState<number>(1);
+  const [colorMode, setColorMode] = useState<ColorMode>('bw');
+  const [paperSize, setPaperSize] = useState<PaperSize>('A4');
+  const [sides, setSides] = useState<PrintSides>('duplex');
+  const [pageRangeType, setPageRangeType] = useState<PageRangeType>('all');
+  const [customRange, setCustomRange] = useState<string>('');
+
+  // Contact & Submission State
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [customerNotes, setCustomerNotes] = useState<string>('');
+  const [paymentChoice, setPaymentChoice] = useState<PaymentChoice>('counter');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Payment Modal & Confirmation
+  const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
+  const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null);
+
+  // Calculation Logic
+  const totalPagesInDoc = file?.detectedPages || 1;
+  const parsedRange = pageRangeType === 'all'
+    ? { valid: true, count: totalPagesInDoc }
+    : parsePageRange(customRange, totalPagesInDoc);
+
+  const selectedPageCount = parsedRange.valid ? parsedRange.count : 0;
+  
+  // Duplex sheets calculation: ceil(pages / 2)
+  const sheetsNeeded = sides === 'duplex'
+    ? Math.ceil(selectedPageCount / 2)
+    : selectedPageCount;
+
+  // Rate calculation
+  const baseRate = colorMode === 'color' ? shop.pricing.colorPerPage : shop.pricing.bwPerPage;
+  const sizeOption = shop.pricing.paperSizes.find(p => p.id === paperSize);
+  const sizeMultiplier = sizeOption ? sizeOption.multiplier : 1.0;
+  
+  const effectivePerPageRate = sides === 'duplex'
+    ? (baseRate * shop.pricing.duplexRateRatio)
+    : baseRate;
+
+  const unitPrice = effectivePerPageRate * sizeMultiplier;
+  const estimatedSubtotal = Math.max(0, unitPrice * selectedPageCount * copies);
+
+  // Quick Preset Document Loader
+  const loadPresetFile = (name: string, pages: number, sizeKB: number) => {
+    setUploadError(null);
+    setFile({
+      name,
+      size: sizeKB * 1024,
+      detectedPages: pages,
+      dataUrl: generateMinimalPdf(name, pages),
+    });
+    setCustomRange(`1-${pages}`);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploaded = e.target.files?.[0];
+    if (!uploaded) return;
+
+    if (!uploaded.name.toLowerCase().endsWith('.pdf') && uploaded.type !== 'application/pdf') {
+      setUploadError('Only PDF files are supported for instant in-shop printing.');
+      return;
+    }
+
+    if (uploaded.size > 50 * 1024 * 1024) {
+      setUploadError('File size exceeds the 50 MB in-shop limit.');
+      return;
+    }
+
+    setUploadError(null);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      let estimatedPages = 1;
+      try {
+        const matches = dataUrl.match(/\/Type\s*\/Page\b/g);
+        if (matches && matches.length > 0) {
+          estimatedPages = matches.length;
+        } else {
+          estimatedPages = Math.max(1, Math.min(60, Math.round(uploaded.size / 65000)));
+        }
+      } catch {
+        estimatedPages = 1;
+      }
+
+      setFile({
+        name: uploaded.name,
+        size: uploaded.size,
+        dataUrl,
+        detectedPages: estimatedPages,
+      });
+      setCustomRange(`1-${estimatedPages}`);
+    };
+    reader.readAsDataURL(uploaded);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!file) {
+      errors.file = 'Please upload a PDF document or choose a sample file.';
+    }
+
+    if (pageRangeType === 'custom' && (!parsedRange.valid || parsedRange.count <= 0)) {
+      errors.range = parsedRange.error || 'Please specify a valid page range.';
+    }
+
+    if (!customerName.trim()) {
+      errors.name = 'Please enter your name for counter identification.';
+    }
+
+    if (!customerPhone.trim() || customerPhone.trim().length < 8) {
+      errors.phone = 'Please provide a valid mobile or WhatsApp number for order status updates.';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmitOrder = (isOnlinePaid: boolean = false) => {
+    if (!validateForm() || !file) return;
+
+    const config: PrintJobConfig = {
+      copies,
+      colorMode,
+      paperSize,
+      sides,
+      pageRangeType,
+      customPageRange: pageRangeType === 'custom' ? customRange : `1-${totalPagesInDoc}`,
+      selectedPageCount,
+      sheetsNeeded: sheetsNeeded * copies,
+      unitPricePerPage: unitPrice,
+      subtotal: estimatedSubtotal,
+    };
+
+    const newOrder = createOrder({
+      shopId: shop.id,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      customerNotes: customerNotes.trim() || undefined,
+      fileName: file.name,
+      fileSize: file.size,
+      fileDataUrl: file.dataUrl,
+      detectedPageCount: file.detectedPages,
+      config,
+      paymentMode: paymentChoice,
+      paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
+    });
+
+    try {
+      confetti({
+        particleCount: 70,
+        spread: 60,
+        origin: { y: 0.7 },
+      });
+    } catch {
+      // fallback
+    }
+
+    setSubmittedOrder(newOrder);
+    onOrderSubmitted(newOrder);
+  };
+
+  // If order was just submitted, display confirmation screen
+  if (submittedOrder) {
+    return (
+      <div className="max-w-xl mx-auto py-8 px-4">
+        <Card className="text-center p-8 bg-white shadow-sm border border-[#e5e3df]">
+          <div className="w-14 h-14 bg-[#d9f3e1] text-[#1aae39] rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+
+          <Badge status={submittedOrder.status} size="md" />
+
+          <h2 className="text-2xl font-bold text-[#1a1a1a] mt-3">
+            Order Submitted to Counter!
+          </h2>
+          <p className="text-sm text-[#787671] mt-1">
+            Show this order reference at the {shop.name} counter.
+          </p>
+
+          <div className="my-6 p-4 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] text-center">
+            <span className="text-xs uppercase tracking-wider text-[#787671] font-semibold">Queue Reference Number</span>
+            <div className="text-4xl font-extrabold text-[#5645d4] tracking-tight mt-1 font-mono">
+              #{submittedOrder.orderNumber}
+            </div>
+            <p className="text-xs text-[#5d5b54] mt-1 font-mono">ID: {submittedOrder.id}</p>
+          </div>
+
+          <div className="text-left space-y-2.5 text-xs border-t border-b border-[#e5e3df] py-4 my-4">
+            <div className="flex justify-between">
+              <span className="text-[#787671]">Document:</span>
+              <span className="font-medium text-[#1a1a1a] truncate max-w-[200px]">{submittedOrder.fileName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#787671]">Print Settings:</span>
+              <span className="font-medium text-[#1a1a1a]">
+                {submittedOrder.config.selectedPageCount} pgs × {submittedOrder.config.copies} copies • {submittedOrder.config.colorMode.toUpperCase()} • {submittedOrder.config.sides === 'duplex' ? 'Double-sided' : 'Single-sided'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#787671]">Estimated Total:</span>
+              <span className="font-bold text-sm text-[#1a1a1a]">₹{submittedOrder.config.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#787671]">Payment:</span>
+              <span className="font-semibold text-[#5645d4]">
+                {submittedOrder.paymentStatus === 'paid' ? 'Paid Online [Sandbox]' : 'Pay at Counter'}
+              </span>
+            </div>
+          </div>
+
+          {/* Retention notice */}
+          <div className="p-3 bg-[#f8f5e8] border border-[#e5e3df] rounded-[8px] text-[11px] text-[#523410] flex items-center gap-2 mb-6 text-left">
+            <Shield className="w-4 h-4 shrink-0 text-[#dd5b00]" />
+            <span>Document file is automatically and permanently purged from the database 10 minutes after counter download/printing.</span>
+          </div>
+
+          <div className="space-y-2.5">
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={() => onViewStatus(submittedOrder.id)}
+              icon={<Clock className="w-4 h-4" />}
+            >
+              Track Live Order Status
+            </Button>
+            <Button
+              variant="secondary"
+              className="w-full text-xs"
+              onClick={() => {
+                setSubmittedOrder(null);
+                setFile(null);
+              }}
+            >
+              Print Another Document
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Widescreen (Mobile-Free) & Adaptive Layout:
+  const containerClass = isMobileFree
+    ? "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8"
+    : "max-w-xl mx-auto py-6 px-4";
+
+  return (
+    <div className={containerClass}>
+      
+      {/* Free Platform Surcharge Banner */}
+      <div className="mb-6 p-3 bg-[#d9f3e1] border border-[#1aae39]/30 rounded-[12px] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#1aae39]">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>100% Free Self-Service:</strong> Zero app fees, zero student surcharges. Direct shop counter pricing only!
+          </span>
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wider bg-white/80 px-2 py-0.5 rounded-full text-[#1aae39]">
+          Free Student Pilot
+        </span>
+      </div>
+
+      {/* Main Grid: Responsive 2-Columns on Desktop (Mobile-Free), 1-Column on Mobile */}
+      <div className={isMobileFree ? "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" : "space-y-6"}>
+        
+        {/* Left Column (7 cols): Document Upload & Configuration */}
+        <div className={isMobileFree ? "lg:col-span-7 space-y-6" : "space-y-6"}>
+          
+          {/* Shop Header (Visible on Mobile or Mobile-Free) */}
+          <Card className="bg-white border-[#e5e3df]">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-[#1a1a1a]">{shop.name}</h1>
+                  <Badge variant={shop.isOpen ? 'mint' : 'rose'} size="sm">
+                    {shop.isOpen ? 'Open' : 'Paused'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-[#787671] mt-0.5">{shop.location}</p>
+                <p className="text-[11px] text-[#a4a097] mt-1">{shop.openingHours}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-[#787671] tracking-wider block">Base Rates</span>
+                <div className="text-xs font-semibold text-[#1a1a1a] mt-0.5">
+                  B&W: ₹{shop.pricing.bwPerPage.toFixed(1)}/pg
+                </div>
+                <div className="text-xs font-semibold text-[#5645d4]">
+                  Color: ₹{shop.pricing.colorPerPage.toFixed(1)}/pg
+                </div>
+              </div>
+            </div>
+
+            {!shop.isOpen && (
+              <div className="mt-3 p-3 bg-[#fde0ec] border border-[#e03131]/30 rounded-[8px] text-xs text-[#e03131] flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>The shop is currently pausing new online print jobs. Please visit the counter directly.</span>
+              </div>
+            )}
+          </Card>
+
+          {/* 1. Document Upload Section */}
+          <Card className="bg-white border-[#e5e3df] space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-[#0a1530] text-white text-[11px] flex items-center justify-center font-bold">1</span>
+                Upload Document (PDF)
+              </h2>
+              <span className="text-[11px] text-[#787671]">Max 50 MB</span>
+            </div>
+
+            {!file ? (
+              <div className="space-y-3">
+                <label
+                  htmlFor={fileInputId}
+                  className="border-2 border-dashed border-[#c8c4be] hover:border-[#5645d4] bg-[#fafaf9] hover:bg-[#f6f5f4] transition-all rounded-[12px] p-6 flex flex-col items-center justify-center cursor-pointer text-center group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#e6e0f5] text-[#5645d4] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                    <UploadCloud className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-[#1a1a1a]">
+                    Click to browse or drop your PDF here
+                  </p>
+                  <p className="text-xs text-[#787671] mt-1">
+                    Fast client-side upload & instant page detection
+                  </p>
+                  <input
+                    id={fileInputId}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </label>
+
+                {/* Quick Demo Preloaded Files */}
+                <div className="pt-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#787671] mb-2 flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-[#5645d4]" />
+                    Or try one-click demo files:
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => loadPresetFile('OS_Lecture_Notes_Unit_1.pdf', 14, 210)}
+                      className="p-2 border border-[#e5e3df] rounded-[8px] bg-white hover:bg-[#f6f5f4] text-left transition-colors cursor-pointer"
+                    >
+                      <p className="text-[11px] font-medium text-[#1a1a1a] truncate">Lecture Notes</p>
+                      <p className="text-[10px] text-[#787671]">14 pages • B&W</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadPresetFile('Design_Project_Report.pdf', 6, 95)}
+                      className="p-2 border border-[#e5e3df] rounded-[8px] bg-white hover:bg-[#f6f5f4] text-left transition-colors cursor-pointer"
+                    >
+                      <p className="text-[11px] font-medium text-[#1a1a1a] truncate">Project Report</p>
+                      <p className="text-[10px] text-[#787671]">6 pages • Color</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadPresetFile('Resume_2026_Standard.pdf', 2, 45)}
+                      className="p-2 border border-[#e5e3df] rounded-[8px] bg-white hover:bg-[#f6f5f4] text-left transition-colors cursor-pointer"
+                    >
+                      <p className="text-[11px] font-medium text-[#1a1a1a] truncate">Resume</p>
+                      <p className="text-[10px] text-[#787671]">2 pages • Quick</p>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-[6px] bg-[#0a1530] text-white flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5 text-[#f9e79f]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#1a1a1a] truncate max-w-[280px]">
+                      {file.name}
+                    </p>
+                    <div className="flex items-center gap-2 text-[11px] text-[#787671]">
+                      <span>{(file.size / 1024).toFixed(0)} KB</span>
+                      <span>•</span>
+                      <span className="font-semibold text-[#5645d4]">{file.detectedPages} pages detected</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setFile(null)}
+                  className="text-xs shrink-0"
+                >
+                  Change
+                </Button>
+              </div>
+            )}
+
+            {uploadError && (
+              <p className="text-xs text-[#e03131] flex items-center gap-1.5 mt-2">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {uploadError}
+              </p>
+            )}
+            {formErrors.file && !file && (
+              <p className="text-xs text-[#e03131]">{formErrors.file}</p>
+            )}
+          </Card>
+
+          {/* 2. Configure Print Options */}
+          <Card className="bg-white border-[#e5e3df] space-y-5">
+            <h2 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-[#0a1530] text-white text-[11px] flex items-center justify-center font-bold">2</span>
+              Print Configuration
+            </h2>
+
+            {/* Color Mode */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                Color Option
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setColorMode('bw')}
+                  className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                    colorMode === 'bw'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                      : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-[#1a1a1a]">Black & White</span>
+                    <span className="text-xs font-bold text-[#1a1a1a]">₹{shop.pricing.bwPerPage.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[11px] text-[#787671] mt-0.5">High-speed laser, lecture notes & text</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setColorMode('color')}
+                  className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                    colorMode === 'color'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                      : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-[#1a1a1a]">Full Color</span>
+                    <span className="text-xs font-bold text-[#5645d4]">₹{shop.pricing.colorPerPage.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[11px] text-[#787671] mt-0.5">Crisp diagrams, presentations, reports</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Print Sides (Duplex / Simplex) */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                Print Sides
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSides('duplex')}
+                  className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                    sides === 'duplex'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                      : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-[#1a1a1a]">Double-Sided</span>
+                    <span className="text-[10px] font-semibold text-[#1aae39] bg-[#d9f3e1] px-1.5 py-0.2 rounded">Save Paper</span>
+                  </div>
+                  <p className="text-[11px] text-[#787671] mt-0.5">Standard notebook & thesis layout</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSides('single')}
+                  className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                    sides === 'single'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                      : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  <span className="text-xs font-semibold text-[#1a1a1a]">Single-Sided</span>
+                  <p className="text-[11px] text-[#787671] mt-0.5">1 page per physical sheet</p>
+                </button>
+              </div>
+            </div>
+
+            {/* Paper Size & Copies */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                  Paper Size
+                </label>
+                <select
+                  value={paperSize}
+                  onChange={(e) => setPaperSize(e.target.value as PaperSize)}
+                  className="w-full h-11 px-3 bg-white text-[#1a1a1a] text-xs font-medium rounded-[8px] border border-[#c8c4be] focus:border-[#5645d4] outline-none"
+                >
+                  {shop.pricing.paperSizes.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.multiplier > 1 ? `(+${((p.multiplier - 1) * 100).toFixed(0)}%)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                  Copies
+                </label>
+                <div className="flex items-center h-11 border border-[#c8c4be] rounded-[8px] bg-white overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCopies(Math.max(1, copies - 1))}
+                    className="w-10 h-full text-base font-semibold text-[#5d5b54] hover:bg-[#f6f5f4] cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={copies}
+                    onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="flex-1 text-center font-bold text-sm text-[#1a1a1a] border-none outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCopies(copies + 1)}
+                    className="w-10 h-full text-base font-semibold text-[#5d5b54] hover:bg-[#f6f5f4] cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Page Range Selection */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                Page Range
+              </label>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setPageRangeType('all')}
+                  className={`p-2.5 border rounded-[8px] text-xs font-medium transition-all cursor-pointer ${
+                    pageRangeType === 'all'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 text-[#5645d4] font-semibold'
+                      : 'border-[#e5e3df] text-[#5d5b54] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  All Pages ({totalPagesInDoc})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageRangeType('custom')}
+                  className={`p-2.5 border rounded-[8px] text-xs font-medium transition-all cursor-pointer ${
+                    pageRangeType === 'custom'
+                      ? 'border-[#5645d4] bg-[#e6e0f5]/30 text-[#5645d4] font-semibold'
+                      : 'border-[#e5e3df] text-[#5d5b54] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  Custom Selection
+                </button>
+              </div>
+
+              {pageRangeType === 'custom' && (
+                <div>
+                  <Input
+                    placeholder="e.g. 1-4, 7, 9-11"
+                    value={customRange}
+                    onChange={(e) => setCustomRange(e.target.value)}
+                    error={formErrors.range || (!parsedRange.valid ? parsedRange.error : undefined)}
+                    helperText={`Detected document length: ${totalPagesInDoc} pages`}
+                  />
+                </div>
+              )}
+            </div>
+
+          </Card>
+
+          {/* 3. Customer Details Form */}
+          <Card className="bg-white border-[#e5e3df] space-y-4">
+            <h2 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-[#0a1530] text-white text-[11px] flex items-center justify-center font-bold">3</span>
+              Pickup Contact
+            </h2>
+
+            <div className="space-y-3">
+              <Input
+                label="Your Full Name"
+                placeholder="e.g. Aarav Sharma"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                error={formErrors.name}
+              />
+
+              <Input
+                label="Mobile / WhatsApp Number"
+                placeholder="e.g. +91 98112 34567"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                error={formErrors.phone}
+                helperText="Used to ping you when your print is ready at the counter"
+              />
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+                  Special Instructions (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Staple top-left, spiral binding if available"
+                  value={customerNotes}
+                  onChange={(e) => setCustomerNotes(e.target.value)}
+                  className="w-full h-11 px-3.5 bg-white text-[#1a1a1a] text-xs rounded-[8px] border border-[#c8c4be] focus:border-[#5645d4] outline-none"
+                />
+              </div>
+            </div>
+          </Card>
+
+        </div>
+
+        {/* Right Column (5 cols on Desktop / Sticky Sidebar): Live Order Summary & Checkout */}
+        <div className={isMobileFree ? "lg:col-span-5 space-y-4 sticky top-20" : "space-y-4"}>
+          
+          {/* Live Document Preview & Sheets Visualization */}
+          <Card className="bg-white border-[#e5e3df] p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e5e3df]">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#5d5b54] flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-[#5645d4]" />
+                Job Specifications
+              </span>
+              <span className="text-[11px] font-semibold text-[#1aae39] bg-[#d9f3e1] px-2 py-0.5 rounded-full">
+                Zero Surcharge
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1 border-b border-[#e5e3df]">
+                <span className="text-[#787671]">Selected Document:</span>
+                <span className="font-semibold text-[#1a1a1a] truncate max-w-[190px]">
+                  {file ? file.name : 'No file selected yet'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#e5e3df]">
+                <span className="text-[#787671]">Pages to Print:</span>
+                <span className="font-bold text-[#1a1a1a]">{selectedPageCount} page{selectedPageCount > 1 ? 's' : ''}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#e5e3df]">
+                <span className="text-[#787671]">Physical Sheets Needed:</span>
+                <span className="font-bold text-[#5645d4]">
+                  {sheetsNeeded * copies} sheet{sheetsNeeded * copies > 1 ? 's' : ''} ({sides === 'duplex' ? 'Double-sided' : 'Single-sided'})
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#e5e3df]">
+                <span className="text-[#787671]">Paper Size & Copies:</span>
+                <span className="font-semibold text-[#1a1a1a]">{paperSize} • {copies} cop{copies > 1 ? 'ies' : 'y'}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Transparent Itemized Price Estimate */}
+          <Card tint="yellow-bold" className="border-none space-y-3 p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-[#793400]" />
+                <span className="text-xs font-bold uppercase tracking-wider text-[#793400]">
+                  Itemized Pricing
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-[#793400] bg-white/70 px-2 py-0.5 rounded-full">
+                Transparent Formula
+              </span>
+            </div>
+
+            <div className="space-y-1.5 text-xs text-[#37352f]">
+              <div className="flex justify-between">
+                <span>Print cost ({selectedPageCount} pgs × ₹{unitPrice.toFixed(2)}):</span>
+                <span className="font-semibold">₹{(unitPrice * selectedPageCount * copies).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-[#1aae39]">
+                <span>Online platform fee:</span>
+                <span className="font-bold">₹0.00 (FREE)</span>
+              </div>
+              <div className="border-t border-[#793400]/20 pt-2 flex justify-between items-baseline font-bold text-base text-[#1a1a1a]">
+                <span>Payable Amount:</span>
+                <span className="text-3xl text-[#0a1530]">₹{estimatedSubtotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-[#793400] leading-tight pt-1">
+              * Shopkeeper verifies page density and paper stock before starting the physical print.
+            </p>
+          </Card>
+
+          {/* Payment Method Selector */}
+          <Card className="bg-white border-[#e5e3df] p-5 space-y-3">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54]">
+              Payment Preference
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentChoice('counter')}
+                className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                  paymentChoice === 'counter'
+                    ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                    : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                }`}
+              >
+                <p className="text-xs font-semibold text-[#1a1a1a]">Pay at Counter</p>
+                <p className="text-[11px] text-[#787671] mt-0.5">Cash / UPI when picking up</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentChoice('online')}
+                className={`p-3 border rounded-[8px] text-left transition-all cursor-pointer ${
+                  paymentChoice === 'online'
+                    ? 'border-[#5645d4] bg-[#e6e0f5]/30 ring-1 ring-[#5645d4]'
+                    : 'border-[#e5e3df] hover:bg-[#fafaf9]'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#1a1a1a]">Pay Online</span>
+                  <span className="text-[9px] font-mono text-[#5645d4] bg-[#e6e0f5] px-1 rounded">PROTOTYPE</span>
+                </div>
+                <p className="text-[11px] text-[#787671] mt-0.5">Instant sandbox UPI/Card</p>
+              </button>
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                className="w-full text-base font-semibold py-3 shadow-md"
+                disabled={!shop.isOpen}
+                onClick={() => {
+                  if (validateForm()) {
+                    if (paymentChoice === 'online') {
+                      setShowPaymentModal(true);
+                    } else {
+                      handleSubmitOrder(false);
+                    }
+                  }
+                }}
+                icon={<ChevronRight className="w-5 h-5" />}
+              >
+                {paymentChoice === 'online'
+                  ? `Proceed to Payment (₹${estimatedSubtotal.toFixed(2)})`
+                  : `Submit Print Order (₹${estimatedSubtotal.toFixed(2)})`}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Privacy & 10-Minute Auto-Purge Notice */}
+          <div className="p-3 bg-white border border-[#e5e3df] rounded-[10px] text-[11px] text-[#5d5b54] flex items-center gap-2">
+            <Shield className="w-4 h-4 shrink-0 text-[#1aae39]" />
+            <span>
+              <strong>10-Minute Database Privacy:</strong> Document is permanently deleted 10 minutes post-download to clear storage and protect your privacy.
+            </span>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Online Payment Modal */}
+      {showPaymentModal && (
+        <PaymentModal
+          amount={estimatedSubtotal}
+          customerName={customerName}
+          onSuccess={() => {
+            setShowPaymentModal(false);
+            handleSubmitOrder(true);
+          }}
+          onCancel={() => setShowPaymentModal(false)}
+          onSwitchToCounter={() => {
+            setShowPaymentModal(false);
+            setPaymentChoice('counter');
+            handleSubmitOrder(false);
+          }}
+        />
+      )}
+
+    </div>
+  );
+};

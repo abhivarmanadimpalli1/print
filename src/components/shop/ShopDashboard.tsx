@@ -1,0 +1,681 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Search,
+  Download,
+  Printer,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  FileText,
+  MessageSquare,
+  Trash2,
+  Clock,
+  ShieldCheck,
+} from 'lucide-react';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Badge } from '../ui/Badge';
+import { RejectOrderModal } from './RejectOrderModal';
+import { ClarifyOrderModal } from './ClarifyOrderModal';
+import { PrintHandoffModal } from './PrintHandoffModal';
+import {
+  getOrders,
+  updateOrderStatus,
+  rejectOrder,
+  requestClarification,
+  reviseOrderQuote,
+  markOrderDownloaded,
+  markOrderPrinted,
+  purgeOrderDocument,
+  subscribeToStore,
+} from '../../lib/store';
+import type { Order, OrderStatus, Shop } from '../../types';
+
+interface ShopDashboardProps {
+  shop: Shop;
+}
+
+// Live Countdown Badge Component
+const PurgeTimerBadge: React.FC<{ order: Order }> = ({ order }) => {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    if (order.isPurged) {
+      return;
+    }
+    if (!order.purgeAt) {
+      return;
+    }
+
+    const updateTimer = () => {
+      const diff = new Date(order.purgeAt!).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft('Purging now...');
+      } else {
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        setTimeLeft(`${mins}m ${secs < 10 ? '0' : ''}${secs}s`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [order.isPurged, order.purgeAt]);
+
+  if (order.isPurged) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#787671] bg-[#f0eeec] px-2 py-0.5 rounded-full border border-[#c8c4be]/40">
+        <Trash2 className="w-3 h-3 text-[#a4a097]" />
+        <span>PDF Purged (Cleaned)</span>
+      </span>
+    );
+  }
+
+  if (order.purgeAt) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#dd5b00] bg-[#ffe8d4] px-2 py-0.5 rounded-full border border-[#dd5b00]/30 animate-pulse">
+        <Clock className="w-3 h-3" />
+        <span>Purges in {timeLeft}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] text-[#787671] bg-[#f6f5f4] px-2 py-0.5 rounded-full">
+      <ShieldCheck className="w-3 h-3 text-[#1aae39]" />
+      <span>10m purge on download/print</span>
+    </span>
+  );
+};
+
+export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
+  const [orders, setOrders] = useState<Order[]>(() => getOrders(shop.id));
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'needs_action' | 'printing' | 'ready' | 'completed'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Modals state
+  const [orderToReject, setOrderToReject] = useState<Order | null>(null);
+  const [orderToClarify, setOrderToClarify] = useState<Order | null>(null);
+  const [orderToPrint, setOrderToPrint] = useState<Order | null>(null);
+
+  // Subscribe to cross-tab updates
+  useEffect(() => {
+    const unsub = subscribeToStore(() => {
+      setOrders(getOrders(shop.id));
+    });
+    return unsub;
+  }, [shop.id]);
+
+  useEffect(() => {
+    if (!selectedOrderId && orders.length > 0) {
+      setSelectedOrderId(orders[0].id);
+    }
+  }, [orders, selectedOrderId]);
+
+  const selectedOrder = orders.find(o => o.id === selectedOrderId) || orders[0];
+
+  // Filtering
+  const filteredOrders = orders.filter(order => {
+    if (statusFilter === 'needs_action' && !['new', 'review'].includes(order.status)) return false;
+    if (statusFilter === 'printing' && !['approved', 'printing'].includes(order.status)) return false;
+    if (statusFilter === 'ready' && order.status !== 'ready') return false;
+    if (statusFilter === 'completed' && !['completed', 'cancelled'].includes(order.status)) return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = order.customerName.toLowerCase().includes(q);
+      const matchFile = order.fileName.toLowerCase().includes(q);
+      const matchNum = order.orderNumber.toString().includes(q);
+      const matchPhone = order.customerPhone.includes(q);
+      if (!matchName && !matchFile && !matchNum && !matchPhone) return false;
+    }
+
+    return true;
+  });
+
+  const handleStatusChange = (orderId: string, status: OrderStatus, note?: string) => {
+    updateOrderStatus(orderId, status, note);
+  };
+
+  const handleDownloadPdf = (order: Order) => {
+    if (!order.fileDataUrl) {
+      alert('This document was already permanently purged after 10 minutes to protect customer privacy and keep the database clear.');
+      return;
+    }
+    // Arm the 10-minute auto-purge timer
+    markOrderDownloaded(order.id);
+
+    const link = document.createElement('a');
+    link.href = order.fileDataUrl;
+    link.download = order.fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleManualPurge = (orderId: string) => {
+    if (window.confirm('Permanently delete this PDF from the database right now? Customer audit receipt will remain.')) {
+      purgeOrderDocument(orderId, 'Manual shopkeeper clean');
+    }
+  };
+
+  // Summary Metrics
+  const countNew = orders.filter(o => o.status === 'new').length;
+  const countPrinting = orders.filter(o => o.status === 'printing').length;
+  const countReady = orders.filter(o => o.status === 'ready').length;
+  const totalRevenue = orders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((sum, o) => sum + (o.config.revisedAmount || o.config.subtotal), 0);
+
+  return (
+    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">
+      
+      {/* Metrics Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="bg-white p-4 border-[#e5e3df]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">New & Queued</span>
+          <div className="text-2xl font-bold text-[#5645d4] mt-1 flex items-center gap-2">
+            <span>{countNew}</span>
+            {countNew > 0 && <span className="w-2 h-2 rounded-full bg-[#5645d4] animate-ping" />}
+          </div>
+          <span className="text-[10px] text-[#a4a097]">Awaiting shop check</span>
+        </Card>
+
+        <Card className="bg-white p-4 border-[#e5e3df]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Printing Now</span>
+          <div className="text-2xl font-bold text-[#dd5b00] mt-1">{countPrinting}</div>
+          <span className="text-[10px] text-[#a4a097]">In hardware spool</span>
+        </Card>
+
+        <Card className="bg-white p-4 border-[#e5e3df]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Ready at Counter</span>
+          <div className="text-2xl font-bold text-[#1aae39] mt-1">{countReady}</div>
+          <span className="text-[10px] text-[#a4a097]">Awaiting customer pickup</span>
+        </Card>
+
+        <Card className="bg-white p-4 border-[#e5e3df]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Queue Value</span>
+          <div className="text-2xl font-bold text-[#1a1a1a] mt-1">₹{totalRevenue.toFixed(0)}</div>
+          <span className="text-[10px] text-[#a4a097]">Excludes cancelled</span>
+        </Card>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-[12px] border border-[#e5e3df]">
+        
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
+              statusFilter === 'all'
+                ? 'bg-[#0a1530] text-white'
+                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+            }`}
+          >
+            All ({orders.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('needs_action')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
+              statusFilter === 'needs_action'
+                ? 'bg-[#0a1530] text-white'
+                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+            }`}
+          >
+            Needs Action ({orders.filter(o => ['new', 'review'].includes(o.status)).length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('printing')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
+              statusFilter === 'printing'
+                ? 'bg-[#0a1530] text-white'
+                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+            }`}
+          >
+            Printing ({orders.filter(o => ['approved', 'printing'].includes(o.status)).length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('ready')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
+              statusFilter === 'ready'
+                ? 'bg-[#0a1530] text-white'
+                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+            }`}
+          >
+            Ready ({orders.filter(o => o.status === 'ready').length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('completed')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
+              statusFilter === 'completed'
+                ? 'bg-[#0a1530] text-white'
+                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+            }`}
+          >
+            Archive ({orders.filter(o => ['completed', 'cancelled'].includes(o.status)).length})
+          </button>
+        </div>
+
+        {/* Search Input */}
+        <div className="relative w-full sm:w-64">
+          <Search className="w-4 h-4 text-[#787671] absolute left-3 top-3 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search name, order #..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-10 pl-9 pr-3 text-xs bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] focus:border-[#5645d4] focus:bg-white outline-none"
+          />
+        </div>
+
+      </div>
+
+      {/* Main Split Layout: Orders Queue (Left) & Inspector Drawer (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* Left: Orders Queue (7 Cols on desktop) */}
+        <div className="lg:col-span-7 space-y-2.5">
+          {filteredOrders.length === 0 ? (
+            <Card className="p-8 text-center bg-white border-[#e5e3df]">
+              <p className="text-sm font-semibold text-[#1a1a1a]">No orders found</p>
+              <p className="text-xs text-[#787671] mt-1">Try selecting a different filter or clearing search.</p>
+            </Card>
+          ) : (
+            filteredOrders.map(order => {
+              const isSelected = selectedOrder?.id === order.id;
+
+              return (
+                <div
+                  key={order.id}
+                  onClick={() => setSelectedOrderId(order.id)}
+                  className={`p-4 rounded-[12px] border transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-white border-[#5645d4] ring-2 ring-[#5645d4]/20 shadow-sm'
+                      : 'bg-white border-[#e5e3df] hover:border-[#c8c4be] hover:bg-[#fafaf9]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    
+                    {/* Order Reference & Customer */}
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[10px] uppercase font-mono font-bold text-[#787671]">Queue</span>
+                        <span className="text-xs font-mono font-bold text-[#1a1a1a]">#{order.orderNumber}</span>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-[#1a1a1a] truncate">
+                            {order.customerName}
+                          </h4>
+                          <span className="text-[11px] text-[#787671] shrink-0">
+                            {order.customerPhone}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-[#5d5b54] truncate mt-0.5 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-[#5645d4] shrink-0" />
+                          <span className="truncate">{order.fileName}</span>
+                        </p>
+
+                        <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px]">
+                          <span className="font-semibold text-[#1a1a1a]">
+                            {order.config.selectedPageCount} pgs ({order.config.sheetsNeeded} sheets)
+                          </span>
+                          <span>•</span>
+                          <span className={order.config.colorMode === 'color' ? 'text-[#5645d4] font-semibold' : 'text-[#5d5b54]'}>
+                            {order.config.colorMode.toUpperCase()}
+                          </span>
+                          <span>•</span>
+                          <span className="text-[#5d5b54]">
+                            {order.config.sides === 'duplex' ? 'Duplex' : 'Single'}
+                          </span>
+                          <span>•</span>
+                          <PurgeTimerBadge order={order} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status & Price */}
+                    <div className="text-right shrink-0 space-y-1">
+                      <Badge status={order.status} size="sm" />
+                      <div className="text-base font-bold text-[#1a1a1a]">
+                        ₹{(order.config.revisedAmount || order.config.subtotal).toFixed(2)}
+                      </div>
+                      <span className={`text-[10px] font-medium block ${
+                        order.paymentStatus === 'paid' ? 'text-[#1aae39]' : 'text-[#dd5b00]'
+                      }`}>
+                        {order.paymentStatus === 'paid' ? 'Paid Online' : 'Pay at Counter'}
+                      </span>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Right: Inspector Drawer (5 Cols on desktop) */}
+        <div className="lg:col-span-5 sticky top-20">
+          {selectedOrder ? (
+            <Card className="bg-white border-[#e5e3df] p-5 space-y-5 shadow-xs">
+              
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-[#e5e3df] pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-[#5645d4] bg-[#e6e0f5] px-2 py-0.5 rounded">
+                      #{selectedOrder.orderNumber}
+                    </span>
+                    <Badge status={selectedOrder.status} size="sm" />
+                  </div>
+                  <h3 className="text-lg font-bold text-[#1a1a1a] mt-1.5">
+                    {selectedOrder.customerName}
+                  </h3>
+                  <p className="text-xs text-[#787671]">{selectedOrder.customerPhone}</p>
+                </div>
+
+                {/* WhatsApp Quick Message Link */}
+                <a
+                  href={`https://wa.me/${selectedOrder.customerPhone.replace(/[^0-9]/g, '')}?text=Hello%20${encodeURIComponent(selectedOrder.customerName)},%20your%20print%20order%20%23${selectedOrder.orderNumber}%20at%20${encodeURIComponent(shop.name)}%20is%20being%20processed.`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#1aae39] hover:bg-[#d9f3e1] p-2 rounded-[8px] border border-[#1aae39]/30 transition-colors"
+                  title="Message customer via WhatsApp"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span className="font-semibold">WhatsApp</span>
+                </a>
+              </div>
+
+              {/* 10-Minute Auto-Purge Alert Banner */}
+              <div className={`p-3 rounded-[8px] border text-xs flex items-center justify-between ${
+                selectedOrder.isPurged
+                  ? 'bg-[#f0eeec] border-[#c8c4be] text-[#5d5b54]'
+                  : selectedOrder.purgeAt
+                  ? 'bg-[#ffe8d4] border-[#dd5b00]/40 text-[#793400]'
+                  : 'bg-[#d9f3e1] border-[#1aae39]/30 text-[#1aae39]'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {selectedOrder.isPurged ? (
+                    <Trash2 className="w-4 h-4 text-[#787671] shrink-0" />
+                  ) : (
+                    <Clock className="w-4 h-4 shrink-0" />
+                  )}
+                  <div>
+                    <strong className="block">
+                      {selectedOrder.isPurged
+                        ? 'PDF Cleared from Database'
+                        : selectedOrder.purgeAt
+                        ? '10-Minute Auto-Purge Armed'
+                        : '10-Minute Auto-Purge Ready'}
+                    </strong>
+                    <span className="text-[11px]">
+                      {selectedOrder.isPurged
+                        ? 'Document binary safely deleted to clear storage.'
+                        : selectedOrder.purgeAt
+                        ? 'Permanently deletes 10 minutes post-download/print.'
+                        : 'Triggered automatically when downloaded or printed.'}
+                    </span>
+                  </div>
+                </div>
+
+                {!selectedOrder.isPurged && (
+                  <button
+                    type="button"
+                    onClick={() => handleManualPurge(selectedOrder.id)}
+                    className="p-1.5 hover:bg-black/10 rounded text-xs font-semibold cursor-pointer shrink-0"
+                    title="Purge PDF right now to immediately clear space"
+                  >
+                    Purge Now
+                  </button>
+                )}
+              </div>
+
+              {/* Special Customer Notes (if provided) */}
+              {selectedOrder.customerNotes && (
+                <div className="p-3 bg-[#fef7d6] rounded-[8px] border border-[#f5d75e]/60 text-xs text-[#523410]">
+                  <strong className="block font-semibold mb-0.5">Customer Instructions:</strong>
+                  "{selectedOrder.customerNotes}"
+                </div>
+              )}
+
+              {/* Clarification Notice (if active) */}
+              {selectedOrder.clarificationNote && (
+                <div className="p-3 bg-[#ffe8d4] rounded-[8px] border border-[#dd5b00]/30 text-xs text-[#793400]">
+                  <strong className="block font-semibold mb-0.5">Active Shop Note:</strong>
+                  "{selectedOrder.clarificationNote}"
+                </div>
+              )}
+
+              {/* Document Specs Matrix */}
+              <div className="space-y-2 text-xs">
+                <span className="font-bold uppercase tracking-wider text-[#787671] text-[10px] block">
+                  Print Specifications
+                </span>
+
+                <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-[#787671]">File Name:</span>
+                    <span className="font-medium text-[#1a1a1a] truncate max-w-[190px]">{selectedOrder.fileName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#787671]">Selected Range:</span>
+                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.customPageRange} ({selectedOrder.config.selectedPageCount} pgs)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#787671]">Paper & Sides:</span>
+                    <span className="font-bold text-[#5645d4]">
+                      {selectedOrder.config.paperSize} • {selectedOrder.config.sides === 'duplex' ? 'Double-Sided (Duplex)' : 'Single-Sided'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#787671]">Color Mode:</span>
+                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.colorMode.toUpperCase()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#787671]">Physical Sheets:</span>
+                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.sheetsNeeded} sheets</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Price & Payment Breakdown */}
+              <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#787671]">Total Amount</span>
+                  <div className="text-xl font-extrabold text-[#0a1530]">
+                    ₹{(selectedOrder.config.revisedAmount || selectedOrder.config.subtotal).toFixed(2)}
+                  </div>
+                  {selectedOrder.config.isRevisedQuote && (
+                    <span className="text-[10px] text-[#dd5b00] font-semibold">(Revised quote)</span>
+                  )}
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-[#787671]">Payment Mode</span>
+                  <div className={`text-xs font-bold ${selectedOrder.paymentStatus === 'paid' ? 'text-[#1aae39]' : 'text-[#dd5b00]'}`}>
+                    {selectedOrder.paymentStatus === 'paid' ? 'PAID ONLINE [SANDBOX]' : 'PAY AT COUNTER'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Core Workflow Actions */}
+              <div className="space-y-2 pt-2 border-t border-[#e5e3df]">
+                
+                {/* Print & Download Primary Actions */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={() => setOrderToPrint(selectedOrder)}
+                    icon={<Printer className="w-4 h-4" />}
+                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged}
+                  >
+                    {selectedOrder.isPurged ? 'PDF Purged' : 'Print via Browser'}
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    onClick={() => handleDownloadPdf(selectedOrder)}
+                    icon={<Download className="w-4 h-4" />}
+                    disabled={selectedOrder.isPurged}
+                  >
+                    {selectedOrder.isPurged ? 'Purged (Clean)' : 'Download PDF'}
+                  </Button>
+                </div>
+
+                {selectedOrder.isPurged && (
+                  <p className="text-[11px] text-[#787671] text-center pt-1">
+                    🔒 The PDF binary was permanently purged 10 minutes post-download to protect user privacy and clear database storage.
+                  </p>
+                )}
+
+                {/* Status progression triggers */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {selectedOrder.status === 'new' && (
+                    <Button
+                      variant="dark"
+                      size="sm"
+                      onClick={() => handleStatusChange(selectedOrder.id, 'approved', 'Shop verified document')}
+                      icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                    >
+                      Approve Job
+                    </Button>
+                  )}
+
+                  {['new', 'review', 'approved'].includes(selectedOrder.status) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleStatusChange(selectedOrder.id, 'printing', 'Hardware spool started')}
+                    >
+                      Mark Printing
+                    </Button>
+                  )}
+
+                  {selectedOrder.status === 'printing' && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="bg-[#1aae39] hover:bg-[#169431]"
+                      onClick={() => handleStatusChange(selectedOrder.id, 'ready', 'Print finished, in counter tray')}
+                    >
+                      Mark Ready for Pickup
+                    </Button>
+                  )}
+
+                  {selectedOrder.status === 'ready' && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="bg-[#1aae39] hover:bg-[#169431]"
+                      onClick={() => handleStatusChange(selectedOrder.id, 'completed', 'Picked up by customer')}
+                    >
+                      Mark Completed
+                    </Button>
+                  )}
+
+                  {/* Clarify button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-[#dd5b00]"
+                    onClick={() => setOrderToClarify(selectedOrder)}
+                    icon={<HelpCircle className="w-3.5 h-3.5" />}
+                  >
+                    Clarify / Revise Quote
+                  </Button>
+
+                  {/* Reject button */}
+                  {selectedOrder.status !== 'cancelled' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-[#e03131]"
+                      onClick={() => setOrderToReject(selectedOrder)}
+                      icon={<XCircle className="w-3.5 h-3.5" />}
+                    >
+                      Reject Order
+                    </Button>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Status History Timeline */}
+              <div className="border-t border-[#e5e3df] pt-3">
+                <span className="text-[10px] uppercase font-bold text-[#787671] block mb-2">Activity Audit Log</span>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                  {selectedOrder.statusHistory.map((h, i) => (
+                    <div key={i} className="text-[11px] text-[#5d5b54] flex justify-between">
+                      <span className="font-semibold capitalize text-[#1a1a1a]">{h.status}:</span>
+                      <span className="text-[#a4a097]">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </Card>
+          ) : (
+            <Card className="p-8 text-center text-[#787671] bg-white border-[#e5e3df]">
+              Select an order from the queue to review details.
+            </Card>
+          )}
+        </div>
+
+      </div>
+
+      {/* Reject Modal */}
+      {orderToReject && (
+        <RejectOrderModal
+          orderNumber={orderToReject.orderNumber}
+          onClose={() => setOrderToReject(null)}
+          onConfirm={(reason) => {
+            rejectOrder(orderToReject.id, reason);
+            setOrderToReject(null);
+          }}
+        />
+      )}
+
+      {/* Clarify / Revise Modal */}
+      {orderToClarify && (
+        <ClarifyOrderModal
+          orderNumber={orderToClarify.orderNumber}
+          currentAmount={orderToClarify.config.revisedAmount || orderToClarify.config.subtotal}
+          onClose={() => setOrderToClarify(null)}
+          onConfirm={(note, revisedAmount) => {
+            if (revisedAmount !== undefined) {
+              reviseOrderQuote(orderToClarify.id, revisedAmount, note);
+            }
+            requestClarification(orderToClarify.id, note);
+            setOrderToClarify(null);
+          }}
+        />
+      )}
+
+      {/* Print Handoff Modal */}
+      {orderToPrint && (
+        <PrintHandoffModal
+          order={orderToPrint}
+          onClose={() => setOrderToPrint(null)}
+          onConfirmPrint={() => {
+            markOrderPrinted(orderToPrint.id);
+            setOrderToPrint(null);
+          }}
+        />
+      )}
+
+    </div>
+  );
+};
