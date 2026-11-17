@@ -604,6 +604,17 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
   return updated;
 }
 
+export function updateOrderFileUrl(orderId: string, url: string): void {
+  const orders = getOrders();
+  const index = orders.findIndex(o => o.id === orderId);
+  if (index !== -1) {
+    orders[index].fileDownloadUrl = url;
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    notifyLocalUpdate();
+    syncOrderToFirestore(orders[index]).catch(() => {});
+  }
+}
+
 export function markOrderDownloaded(orderId: string): Order | undefined {
   const orders = getOrders();
   const index = orders.findIndex(o => o.id === orderId);

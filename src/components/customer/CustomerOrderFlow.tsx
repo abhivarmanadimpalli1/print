@@ -19,10 +19,9 @@ import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { PaymentModal } from './PaymentModal';
 import { parsePageRange } from '../../lib/pageRangeParser';
-import { createOrder } from '../../lib/store';
+import { createOrder, updateOrderFileUrl } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
 import { uploadPdfToCloud } from '../../lib/cloudSync';
-import { uploadPdfToFirebaseStorage } from '../../lib/firebase';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
 interface CustomerOrderFlowProps {
@@ -49,7 +48,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   // Upload State
   const [file, setFile] = useState<UploadedFileInfo | null>(null);
   const [rawFile, setRawFile] = useState<File | null>(null);
-  const [isUploadingCloud, setIsUploadingCloud] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Configuration State
@@ -175,29 +173,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmitOrder = async (isOnlinePaid: boolean = false) => {
+  const handleSubmitOrder = (isOnlinePaid: boolean = false) => {
     if (!validateForm() || !file) return;
-
-    setIsUploadingCloud(true);
-    let cloudFileUrl: string | undefined = undefined;
-
-    try {
-      if (rawFile) {
-        // 1. Try uploading to Firebase Cloud Storage first
-        let uploadedUrl = await uploadPdfToFirebaseStorage(shop.id, rawFile, rawFile.name);
-        // 2. If Firebase Storage fails or is not enabled, fall back to high-capacity cloud sync
-        if (!uploadedUrl) {
-          uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
-        }
-        if (uploadedUrl) {
-          cloudFileUrl = uploadedUrl;
-        }
-      }
-    } catch (err) {
-      console.warn('Failed uploading PDF to cloud:', err);
-    } finally {
-      setIsUploadingCloud(false);
-    }
 
     const config: PrintJobConfig = {
       copies,
@@ -212,6 +189,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       subtotal: estimatedSubtotal,
     };
 
+    // 1. Instantly create the order in local & Firestore database (< 300ms)
     const newOrder = createOrder({
       shopId: shop.id,
       customerName: customerName.trim(),
@@ -220,13 +198,14 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       fileName: file.name,
       fileSize: file.size,
       fileDataUrl: file.dataUrl,
-      fileDownloadUrl: cloudFileUrl,
+      fileDownloadUrl: undefined,
       detectedPageCount: file.detectedPages,
       config,
       paymentMode: paymentChoice,
       paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
     });
 
+    // 2. Instant celebration and immediate screen transition! Zero waiting!
     try {
       confetti({
         particleCount: 70,
@@ -239,6 +218,20 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
     setSubmittedOrder(newOrder);
     onOrderSubmitted(newOrder);
+
+    // 3. Background stream of document binary if needed - never blocks the customer
+    if (rawFile) {
+      (async () => {
+        try {
+          const uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
+          if (uploadedUrl) {
+            updateOrderFileUrl(newOrder.id, uploadedUrl);
+          }
+        } catch (err) {
+          console.warn('[Background Document Transfer] Info:', err);
+        }
+      })();
+    }
   };
 
   // If order was just submitted, display confirmation screen
@@ -822,7 +815,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <Button
                 variant="primary"
                 className="w-full text-base font-semibold py-3 shadow-md"
-                disabled={!shop.isOpen || isUploadingCloud}
+                disabled={!shop.isOpen}
                 onClick={() => {
                   if (validateForm()) {
                     if (paymentChoice === 'online') {
@@ -834,9 +827,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 }}
                 icon={<ChevronRight className="w-5 h-5" />}
               >
-                {isUploadingCloud
-                  ? 'Transferring Real Document to Counter...'
-                  : paymentChoice === 'online'
+                {paymentChoice === 'online'
                   ? `Proceed to Payment (₹${estimatedSubtotal.toFixed(2)})`
                   : `Submit Print Order (₹${estimatedSubtotal.toFixed(2)})`}
               </Button>

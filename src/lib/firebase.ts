@@ -142,10 +142,11 @@ export async function syncOrderToFirestore(order: Order): Promise<boolean> {
 
   try {
     const orderRef = doc(db, 'orders', order.id);
-    // Remove large local base64 string before saving to Firestore to keep DB fast & clean
+    // Keep fileDataUrl in Firestore if <= 800KB for zero-latency instant downloads
+    const isSmallEnoughForFirestore = order.fileDataUrl && order.fileDataUrl.length <= 800000;
     const safeOrder = {
       ...order,
-      fileDataUrl: undefined,
+      fileDataUrl: isSmallEnoughForFirestore ? order.fileDataUrl : undefined,
     };
     await setDoc(orderRef, safeOrder, { merge: true });
     return true;
