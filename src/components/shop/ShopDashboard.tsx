@@ -29,7 +29,10 @@ import {
   markOrderPrinted,
   purgeOrderDocument,
   subscribeToStore,
+  saveOrderToLocal,
 } from '../../lib/store';
+import { listenToStoreOrdersFromFirestore } from '../../lib/firebase';
+import { listenToCloud } from '../../lib/cloudSync';
 import type { Order, OrderStatus, Shop } from '../../types';
 
 interface ShopDashboardProps {
@@ -108,12 +111,35 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Subscribe to cross-tab updates
+  // Real-time synchronization across devices (Firestore + Cloud SSE + local storage)
   useEffect(() => {
-    const unsub = subscribeToStore(() => {
+    // 1. Cross-tab storage updates
+    const unsubStore = subscribeToStore(() => {
       setOrders(getOrders(shop.id));
     });
-    return unsub;
+
+    // 2. Real-time Firestore orders listener for this bookstore
+    const unsubFirestore = listenToStoreOrdersFromFirestore(shop.id, (firestoreOrders) => {
+      firestoreOrders.forEach(o => saveOrderToLocal(o));
+      setOrders(getOrders(shop.id));
+    });
+
+    // 3. Real-time Cloud SSE listener
+    const unsubCloud = listenToCloud(shop.id, (payload) => {
+      if (payload.action === 'CREATE_ORDER' && payload.order) {
+        saveOrderToLocal(payload.order);
+        setOrders(getOrders(shop.id));
+        showToast(`🔔 New Order #${payload.order.orderNumber} received from ${payload.order.customerName}!`);
+      } else if (payload.action === 'UPDATE_STATUS' && payload.orderId) {
+        setOrders(getOrders(shop.id));
+      }
+    });
+
+    return () => {
+      unsubStore();
+      unsubFirestore();
+      unsubCloud();
+    };
   }, [shop.id]);
 
   useEffect(() => {

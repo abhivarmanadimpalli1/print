@@ -1,7 +1,5 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useId, useRef } from 'react';
 import {
-  UploadCloud,
-  FileText,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -12,13 +10,21 @@ import {
   Layers,
   Zap,
   Search,
+  Plus,
+  Trash2,
 } from 'lucide-react';
+import {
+  FilePdfIcon,
+  ImageSquareIcon,
+  XIcon,
+} from '@phosphor-icons/react';
 import confetti from 'canvas-confetti';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { PaymentModal } from './PaymentModal';
+import { MagneticDropZone } from './MagneticDropZone';
 import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder, updateOrderFileUrl } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
@@ -32,11 +38,14 @@ interface CustomerOrderFlowProps {
   isMobileFree?: boolean; // Desktop widescreen layout
 }
 
-interface UploadedFileInfo {
+export interface UploadedDocItem {
+  id: string;
   name: string;
   size: number;
-  dataUrl?: string;
   detectedPages: number;
+  dataUrl?: string;
+  isImage: boolean;
+  rawFile?: File;
 }
 
 export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
@@ -45,10 +54,12 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   onViewStatus,
   isMobileFree = true,
 }) => {
-  const fileInputId = useId();
-  // Upload State
-  const [file, setFile] = useState<UploadedFileInfo | null>(null);
-  const [rawFile, setRawFile] = useState<File | null>(null);
+  const addMoreInputId = useId();
+  const addMoreInputRef = useRef<HTMLInputElement>(null);
+
+  // Multi-File Upload State
+  const [docList, setDocList] = useState<UploadedDocItem[]>([]);
+  const [rawFiles, setRawFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Configuration State
@@ -83,8 +94,15 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     }
   };
 
-  // Calculation Logic
-  const totalPagesInDoc = file?.detectedPages || 1;
+  // Calculation Logic across all documents
+  const totalPagesInDoc = docList.reduce((sum, d) => sum + (d.detectedPages || 1), 0) || 1;
+  const totalSize = docList.reduce((sum, d) => sum + d.size, 0);
+  const primaryFileName = docList.length === 1
+    ? docList[0].name
+    : docList.length > 1
+    ? `${docList[0].name} (+${docList.length - 1} more docs)`
+    : '';
+
   const parsedRange = pageRangeType === 'all'
     ? { valid: true, count: totalPagesInDoc }
     : parsePageRange(customRange, totalPagesInDoc);
@@ -111,72 +129,115 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   // Quick Preset Document Loader
   const loadPresetFile = (name: string, pages: number, sizeKB: number) => {
     setUploadError(null);
-    setRawFile(null);
-    setFile({
+    const presetItem: UploadedDocItem = {
+      id: `preset_${Date.now()}`,
       name,
       size: sizeKB * 1024,
       detectedPages: pages,
       dataUrl: generateMinimalPdf(name, pages),
-    });
+      isImage: false,
+    };
+    setDocList([presetItem]);
+    setRawFiles([]);
     setCustomRange(`1-${pages}`);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploaded = e.target.files?.[0];
-    if (!uploaded) return;
+  // Process incoming files from Magnetic DropZone or file input
+  const processFiles = async (incomingFiles: File[]): Promise<UploadedDocItem[]> => {
+    const items: UploadedDocItem[] = [];
 
-    const isPdf = uploaded.name.toLowerCase().endsWith('.pdf') || uploaded.type === 'application/pdf';
-    const isImage = uploaded.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(uploaded.name);
+    for (const f of incomingFiles) {
+      const isPdf = f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf';
+      const isImage = f.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(f.name);
 
-    if (!isPdf && !isImage) {
-      setUploadError('Please upload a PDF document or image (JPG, PNG, WebP).');
-      return;
-    }
+      if (!isPdf && !isImage) continue;
 
-    if (uploaded.size > 50 * 1024 * 1024) {
-      setUploadError('File size exceeds the 50 MB in-shop limit.');
-      return;
-    }
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(f);
+      });
 
-    setUploadError(null);
-    setRawFile(uploaded);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      let estimatedPages = 1;
-      if (isPdf) {
+      let detectedPages = 1;
+      if (isPdf && dataUrl) {
         try {
           const matches = dataUrl.match(/\/Type\s*\/Page\b/g);
           if (matches && matches.length > 0) {
-            estimatedPages = matches.length;
+            detectedPages = matches.length;
           } else {
-            estimatedPages = Math.max(1, Math.min(60, Math.round(uploaded.size / 65000)));
+            detectedPages = Math.max(1, Math.min(60, Math.round(f.size / 65000)));
           }
         } catch {
-          estimatedPages = 1;
+          detectedPages = 1;
         }
-      } else {
-        // Image printout is 1 sheet
-        estimatedPages = 1;
       }
 
-      setFile({
-        name: uploaded.name,
-        size: uploaded.size,
+      items.push({
+        id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        name: f.name,
+        size: f.size,
+        detectedPages,
         dataUrl,
-        detectedPages: estimatedPages,
+        isImage,
+        rawFile: f,
       });
-      setCustomRange(`1-${estimatedPages}`);
-    };
-    reader.readAsDataURL(uploaded);
+    }
+
+    return items;
+  };
+
+  const handleDropZoneFilesChange = async (filesFromZone: File[]) => {
+    if (filesFromZone.length === 0) {
+      setDocList([]);
+      setRawFiles([]);
+      return;
+    }
+    const processed = await processFiles(filesFromZone);
+    setDocList(processed);
+    setRawFiles(filesFromZone);
+    const sumPgs = processed.reduce((sum, d) => sum + d.detectedPages, 0);
+    setCustomRange(`1-${sumPgs || 1}`);
+  };
+
+  const handleAddMoreFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const moreFiles = Array.from(e.target.files || []);
+    if (moreFiles.length === 0) return;
+    const processed = await processFiles(moreFiles);
+    setDocList(prev => {
+      const next = [...prev, ...processed];
+      const sumPgs = next.reduce((sum, d) => sum + d.detectedPages, 0);
+      setCustomRange(`1-${sumPgs || 1}`);
+      return next;
+    });
+    setRawFiles(prev => [...prev, ...moreFiles]);
+    e.target.value = '';
+  };
+
+  const handleRemoveDoc = (id: string) => {
+    const target = docList.find(d => d.id === id);
+    setDocList(prev => {
+      const next = prev.filter(d => d.id !== id);
+      const sumPgs = next.reduce((sum, d) => sum + d.detectedPages, 0);
+      setCustomRange(`1-${sumPgs || 1}`);
+      return next;
+    });
+    if (target) {
+      setRawFiles(prev => prev.filter(f => f.name !== target.name));
+    }
+  };
+
+  const handleClearAllDocs = () => {
+    setDocList([]);
+    setRawFiles([]);
+    setCustomRange('');
   };
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
-    if (!file) {
-      errors.file = 'Please upload a PDF document or choose a sample file.';
+    if (docList.length === 0) {
+      errors.file = 'Please upload at least one PDF or photo, or choose a sample file.';
     }
 
     if (pageRangeType === 'custom' && (!parsedRange.valid || parsedRange.count <= 0)) {
@@ -196,7 +257,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   };
 
   const handleSubmitOrder = (isOnlinePaid: boolean = false) => {
-    if (!validateForm() || !file) return;
+    if (!validateForm() || docList.length === 0) return;
 
     const config: PrintJobConfig = {
       copies,
@@ -217,11 +278,11 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       customerNotes: customerNotes.trim() || undefined,
-      fileName: file.name,
-      fileSize: file.size,
-      fileDataUrl: file.dataUrl,
+      fileName: primaryFileName || docList[0]?.name || 'Document.pdf',
+      fileSize: totalSize,
+      fileDataUrl: docList[0]?.dataUrl,
       fileDownloadUrl: undefined,
-      detectedPageCount: file.detectedPages,
+      detectedPageCount: totalPagesInDoc,
       config,
       paymentMode: paymentChoice,
       paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
@@ -245,10 +306,11 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     onViewStatus(newOrder.id);
 
     // 3. Background stream of document binary if needed - never blocks the customer
-    if (rawFile) {
+    const firstRaw = docList[0]?.rawFile || rawFiles[0];
+    if (firstRaw) {
       (async () => {
         try {
-          const uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
+          const uploadedUrl = await uploadPdfToCloud(shop.id, firstRaw, firstRaw.name);
           if (uploadedUrl) {
             updateOrderFileUrl(newOrder.id, uploadedUrl);
           }
@@ -328,7 +390,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               className="w-full text-xs"
               onClick={() => {
                 setSubmittedOrder(null);
-                setFile(null);
+                setDocList([]);
+                setRawFiles([]);
               }}
             >
               Print Another Document
@@ -457,35 +520,20 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <span className="text-[11px] text-[#787671]">PDF, JPG, PNG (Max 50 MB)</span>
             </div>
 
-            {!file ? (
-              <div className="space-y-3">
-                <label
-                  htmlFor={fileInputId}
-                  className="border-2 border-dashed border-[#c8c4be] hover:border-[#5645d4] bg-[#fafaf9] hover:bg-[#f6f5f4] transition-all rounded-[12px] p-6 flex flex-col items-center justify-center cursor-pointer text-center group"
-                >
-                  <div className="w-12 h-12 rounded-full bg-[#e6e0f5] text-[#5645d4] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                    <UploadCloud className="w-6 h-6" />
-                  </div>
-                  <p className="text-sm font-semibold text-[#1a1a1a]">
-                    Click to browse or drop your PDF or Image here
-                  </p>
-                  <p className="text-xs text-[#787671] mt-1">
-                    Supports PDFs, photos, certificates & study notes (JPG, PNG, WebP)
-                  </p>
-                  <input
-                    id={fileInputId}
-                    type="file"
-                    accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg,image/webp"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </label>
+            {docList.length === 0 ? (
+              <div className="space-y-4">
+                <MagneticDropZone
+                  accept="image/*,.pdf,.zip"
+                  multiple={true}
+                  files={rawFiles}
+                  onFilesChange={handleDropZoneFilesChange}
+                />
 
                 {/* Quick Demo Preloaded Files */}
-                <div className="pt-2">
+                <div className="pt-1">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-[#787671] mb-2 flex items-center gap-1.5">
                     <HelpCircle className="w-3.5 h-3.5 text-[#5645d4]" />
-                    Or try one-click demo files:
+                    Or test with one-click sample files:
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     <button
@@ -516,36 +564,94 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="p-3.5 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {file.dataUrl && file.dataUrl.startsWith('data:image/') ? (
-                    <img src={file.dataUrl} alt={file.name} className="w-10 h-10 object-cover rounded-[6px] border border-[#e5e3df] shrink-0" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-[6px] bg-[#0a1530] text-white flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5 text-[#f9e79f]" />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#1a1a1a] truncate max-w-[280px]">
-                      {file.name}
-                    </p>
-                    <div className="flex items-center gap-2 text-[11px] text-[#787671]">
-                      <span>{(file.size / 1024).toFixed(0)} KB</span>
-                      <span>•</span>
-                      <span className="font-semibold text-[#5645d4]">
-                        {file.dataUrl && file.dataUrl.startsWith('data:image/') ? 'Image print sheet' : `${file.detectedPages} pages detected`}
-                      </span>
-                    </div>
-                  </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold text-[#1a1a1a] pb-2 border-b border-[#e5e3df]">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-[#1aae39]" />
+                    <span>Uploaded Documents ({docList.length})</span>
+                  </span>
+                  <span className="text-[#5645d4] font-mono text-[11px]">
+                    {totalPagesInDoc} total pages • {(totalSize / 1024).toFixed(0)} KB
+                  </span>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setFile(null)}
-                  className="text-xs shrink-0"
-                >
-                  Change
-                </Button>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {docList.map((docItem) => (
+                    <div
+                      key={docItem.id}
+                      className="p-2.5 rounded-[10px] bg-[#f6f5f4] border border-[#e5e3df] flex items-center justify-between gap-3 hover:bg-[#fafaf9] transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {docItem.isImage && docItem.dataUrl ? (
+                          <img
+                            src={docItem.dataUrl}
+                            alt={docItem.name}
+                            className="w-9 h-9 object-cover rounded-[6px] border border-[#e5e3df] shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-[8px] bg-[#e6e0f5] text-[#5645d4] flex items-center justify-center shrink-0">
+                            {docItem.isImage ? (
+                              <ImageSquareIcon size={20} weight="fill" />
+                            ) : (
+                              <FilePdfIcon size={20} weight="fill" />
+                            )}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[#1a1a1a] truncate max-w-[220px] sm:max-w-[280px]">
+                            {docItem.name}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] text-[#787671] mt-0.5">
+                            <span>{(docItem.size / 1024).toFixed(0)} KB</span>
+                            <span>•</span>
+                            <span className="font-semibold text-[#5645d4]">
+                              {docItem.isImage ? '1 page image' : `${docItem.detectedPages} pages`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDoc(docItem.id)}
+                        className="p-1.5 text-[#787671] hover:text-[#e03131] hover:bg-[#fde0ec] rounded-[6px] transition-colors cursor-pointer shrink-0"
+                        title="Remove this document"
+                      >
+                        <XIcon size={16} weight="bold" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#e5e3df]">
+                  <button
+                    type="button"
+                    onClick={() => addMoreInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5645d4] bg-[#f0edfa] hover:bg-[#e6e0f5] px-3 py-1.5 rounded-[8px] transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add More Documents / Photos</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearAllDocs}
+                    className="text-xs text-[#787671] hover:text-[#e03131] hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear All</span>
+                  </button>
+
+                  <input
+                    ref={addMoreInputRef}
+                    id={addMoreInputId}
+                    type="file"
+                    multiple
+                    accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg,image/webp"
+                    className="hidden"
+                    onChange={handleAddMoreFiles}
+                  />
+                </div>
               </div>
             )}
 
@@ -555,7 +661,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 {uploadError}
               </p>
             )}
-            {formErrors.file && !file && (
+            {formErrors.file && docList.length === 0 && (
               <p className="text-xs text-[#e03131]">{formErrors.file}</p>
             )}
           </Card>
@@ -800,7 +906,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <div className="flex justify-between py-1 border-b border-[#e5e3df]">
                 <span className="text-[#787671]">Selected Document:</span>
                 <span className="font-semibold text-[#1a1a1a] truncate max-w-[190px]">
-                  {file ? file.name : 'No file selected yet'}
+                  {docList.length > 0 ? primaryFileName : 'No file selected yet'}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-[#e5e3df]">

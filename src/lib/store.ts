@@ -212,6 +212,102 @@ const INITIAL_ORDERS: Order[] = [
     updatedAt: new Date(Date.now() - 10 * 60000).toISOString(),
   },
   {
+    id: 'ORD-1045',
+    orderNumber: 1045,
+    shopId: 'sri-krishna-xerox',
+    customerName: 'K. Varun Sharma',
+    customerPhone: '+91 79898 69191',
+    fileName: 'Operating_System_Complete_Notes.pdf',
+    fileSize: 2200000,
+    fileDataUrl: generateMinimalPdf('Operating System Complete Notes', 11),
+    detectedPageCount: 11,
+    config: {
+      copies: 1,
+      colorMode: 'bw',
+      paperSize: 'A4',
+      sides: 'single',
+      pageRangeType: 'all',
+      customPageRange: '1-11',
+      selectedPageCount: 11,
+      sheetsNeeded: 11,
+      unitPricePerPage: 1.80,
+      subtotal: 19.80,
+    },
+    paymentMode: 'counter',
+    paymentStatus: 'pay_at_counter',
+    status: 'new',
+    statusHistory: [
+      { status: 'new', timestamp: new Date(Date.now() - 3 * 60000).toISOString() },
+    ],
+    createdAt: new Date(Date.now() - 3 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * 60000).toISOString(),
+  },
+  {
+    id: 'ORD-1044',
+    orderNumber: 1044,
+    shopId: 'sri-krishna-xerox',
+    customerName: 'Sneha Rao',
+    customerPhone: '+91 98450 12345',
+    fileName: 'Project_Seminar_Slides_Print.pdf',
+    fileSize: 3400000,
+    fileDataUrl: generateMinimalPdf('Seminar Presentation Slides', 8),
+    detectedPageCount: 8,
+    config: {
+      copies: 2,
+      colorMode: 'color',
+      paperSize: 'A4',
+      sides: 'duplex',
+      pageRangeType: 'all',
+      customPageRange: '1-8',
+      selectedPageCount: 8,
+      sheetsNeeded: 8,
+      unitPricePerPage: 7.20,
+      subtotal: 57.60,
+    },
+    paymentMode: 'counter',
+    paymentStatus: 'pay_at_counter',
+    status: 'review',
+    clarificationNote: 'Cover slide in Color (₹8), remaining 7 slides B&W (₹1.80). Confirm at counter to save ₹40.',
+    statusHistory: [
+      { status: 'new', timestamp: new Date(Date.now() - 12 * 60000).toISOString() },
+      { status: 'review', timestamp: new Date(Date.now() - 8 * 60000).toISOString() },
+    ],
+    createdAt: new Date(Date.now() - 12 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 8 * 60000).toISOString(),
+  },
+  {
+    id: 'ORD-1043',
+    orderNumber: 1043,
+    shopId: 'sri-krishna-xerox',
+    customerName: 'Rohan Kumar',
+    customerPhone: '+91 97012 34567',
+    fileName: 'Mathematics_Assignment_Unit_4.pdf',
+    fileSize: 1400000,
+    fileDataUrl: generateMinimalPdf('Mathematics Unit 4 Assignment', 6),
+    detectedPageCount: 6,
+    config: {
+      copies: 1,
+      colorMode: 'bw',
+      paperSize: 'A4',
+      sides: 'duplex',
+      pageRangeType: 'all',
+      customPageRange: '1-6',
+      selectedPageCount: 6,
+      sheetsNeeded: 3,
+      unitPricePerPage: 1.62,
+      subtotal: 9.72,
+    },
+    paymentMode: 'counter',
+    paymentStatus: 'pay_at_counter',
+    status: 'approved',
+    statusHistory: [
+      { status: 'new', timestamp: new Date(Date.now() - 20 * 60000).toISOString() },
+      { status: 'approved', timestamp: new Date(Date.now() - 10 * 60000).toISOString(), note: 'Verified margins by counter' },
+    ],
+    createdAt: new Date(Date.now() - 20 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 10 * 60000).toISOString(),
+  },
+  {
     id: 'ORD-1038',
     orderNumber: 1038,
     shopId: 'sri-krishna-xerox',
@@ -245,6 +341,42 @@ const INITIAL_ORDERS: Order[] = [
     purgeAt: new Date(Date.now() + 7 * 60000).toISOString(),
     createdAt: new Date(Date.now() - 25 * 60000).toISOString(),
     updatedAt: new Date(Date.now() - 5 * 60000).toISOString(),
+  },
+  {
+    id: 'ORD-1035',
+    orderNumber: 1035,
+    shopId: 'sri-krishna-xerox',
+    customerName: 'Divya Reddy',
+    customerPhone: '+91 99887 76655',
+    fileName: 'Placement_Resume_Final.pdf',
+    fileSize: 850000,
+    fileDataUrl: generateMinimalPdf('Placement Resume Final', 2),
+    detectedPageCount: 2,
+    config: {
+      copies: 3,
+      colorMode: 'color',
+      paperSize: 'A4',
+      sides: 'single',
+      pageRangeType: 'all',
+      customPageRange: '1-2',
+      selectedPageCount: 2,
+      sheetsNeeded: 2,
+      unitPricePerPage: 8.0,
+      subtotal: 48.0,
+    },
+    paymentMode: 'counter',
+    paymentStatus: 'pay_at_counter',
+    status: 'ready',
+    statusHistory: [
+      { status: 'new', timestamp: new Date(Date.now() - 40 * 60000).toISOString() },
+      { status: 'approved', timestamp: new Date(Date.now() - 30 * 60000).toISOString() },
+      { status: 'printing', timestamp: new Date(Date.now() - 20 * 60000).toISOString() },
+      { status: 'ready', timestamp: new Date(Date.now() - 8 * 60000).toISOString(), note: 'In tray #2' },
+    ],
+    printedAt: new Date(Date.now() - 15 * 60000).toISOString(),
+    purgeAt: new Date(Date.now() + 2 * 60000).toISOString(),
+    createdAt: new Date(Date.now() - 40 * 60000).toISOString(),
+    updatedAt: new Date(Date.now() - 8 * 60000).toISOString(),
   },
   {
     id: 'ORD-1037',
@@ -519,13 +651,15 @@ export function getOrders(shopId?: string): Order[] {
 
 export function getOrder(orderIdOrNumber: string | number): Order | undefined {
   const all = getAllOrders();
-  const cleanId = String(orderIdOrNumber).trim().replace(/^#/, '').toUpperCase();
+  const raw = String(orderIdOrNumber).trim();
+  const cleanId = raw.replace(/^#/, '').toUpperCase();
   const numericOnly = Number(cleanId.replace(/^ORD-/, ''));
   return all.find(o => 
     (o.id && o.id.toUpperCase() === cleanId) || 
     (o.orderNumber && `ORD-${o.orderNumber}`.toUpperCase() === cleanId) ||
     String(o.orderNumber) === cleanId ||
-    (!isNaN(numericOnly) && o.orderNumber === numericOnly)
+    (!isNaN(numericOnly) && o.orderNumber === numericOnly) ||
+    (o.id && o.id.toLowerCase() === raw.toLowerCase())
   );
 }
 
@@ -542,18 +676,21 @@ export function saveOrderToLocal(order: Order): void {
 }
 
 function findOrderIndex(orders: Order[], orderIdOrNumber: string | number): number {
-  const cleanId = String(orderIdOrNumber).trim().replace(/^#/, '').toUpperCase();
+  const raw = String(orderIdOrNumber).trim();
+  const cleanId = raw.replace(/^#/, '').toUpperCase();
   const numericOnly = Number(cleanId.replace(/^ORD-/, ''));
   return orders.findIndex(o => 
     (o.id && o.id.toUpperCase() === cleanId) || 
     (o.orderNumber && `ORD-${o.orderNumber}`.toUpperCase() === cleanId) ||
-    (!isNaN(numericOnly) && o.orderNumber === numericOnly)
+    String(o.orderNumber) === cleanId ||
+    (!isNaN(numericOnly) && o.orderNumber === numericOnly) ||
+    (o.id && o.id.toLowerCase() === raw.toLowerCase())
   );
 }
 
 export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'status' | 'statusHistory'>): Order {
   const orders = getAllOrders();
-  const maxNumber = orders.reduce((max, o) => Math.max(max, o.orderNumber || 1000), 1040);
+  const maxNumber = orders.reduce((max, o) => Math.max(max, o.orderNumber || 1000), 1045);
   const nextNumber = maxNumber + 1;
   const nextId = `ORD-${nextNumber}`;
   const now = new Date().toISOString();

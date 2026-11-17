@@ -13,7 +13,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { getOrder, getShop, saveOrderToLocal, subscribeToStore } from '../../lib/store';
-import { getOrderFromFirestore } from '../../lib/firebase';
+import { getOrderFromFirestore, listenToStoreOrdersFromFirestore } from '../../lib/firebase';
+import { listenToCloud } from '../../lib/cloudSync';
 import { DigitalCounterBill } from './DigitalCounterBill';
 import type { Order, OrderStatus, Shop } from '../../types';
 
@@ -35,7 +36,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   const [isSearchingCloud, setIsSearchingCloud] = useState<boolean>(!order);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchError, setSearchError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'tracker' | 'bill'>('bill'); // Default to bill as requested!
+  const [activeTab, setActiveTab] = useState<'tracker' | 'bill'>('bill'); // Default to tactile bill!
   const [isManualSearching, setIsManualSearching] = useState<boolean>(false);
 
   // Sync state if initialOrderId prop changes
@@ -50,7 +51,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
 
   // Subscribe to real-time store updates and query Firestore if missing
   useEffect(() => {
-    const unsub = subscribeToStore(() => {
+    const unsubStore = subscribeToStore(() => {
       const local = getOrder(activeId);
       if (local) {
         setOrder(local);
@@ -58,27 +59,58 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
       }
     });
 
+    const currentShopId = order?.shopId || propShop?.id || 'sri-krishna-xerox';
+
+    // Real-time Cloud SSE listener
+    const unsubCloud = listenToCloud(currentShopId, (payload) => {
+      if (payload.action === 'UPDATE_STATUS' && payload.orderId) {
+        const cleanA = String(activeId).replace(/^#/, '').toUpperCase();
+        const cleanPayload = String(payload.orderId).replace(/^#/, '').toUpperCase();
+        if (cleanA === cleanPayload || cleanPayload.includes(cleanA) || cleanA.includes(cleanPayload)) {
+          const refreshed = getOrder(activeId);
+          if (refreshed) setOrder(refreshed);
+        }
+      }
+    });
+
+    // Real-time Firestore listener
+    const unsubFirestore = listenToStoreOrdersFromFirestore(currentShopId, (remoteOrders) => {
+      remoteOrders.forEach(o => saveOrderToLocal(o));
+      const match = getOrder(activeId);
+      if (match) {
+        setOrder(match);
+        setIsSearchingCloud(false);
+      }
+    });
+
     if (!order) {
       setIsSearchingCloud(true);
+      const timeoutId = setTimeout(() => {
+        setIsSearchingCloud(false);
+      }, 2500);
+
       (async () => {
         try {
           const fromFirestore = await getOrderFromFirestore(activeId);
           if (fromFirestore) {
             saveOrderToLocal(fromFirestore);
             setOrder(fromFirestore);
-            setIsSearchingCloud(false);
-            return;
           }
         } catch (err) {
           console.warn('[Firestore lookup]', err);
         } finally {
+          clearTimeout(timeoutId);
           setIsSearchingCloud(false);
         }
       })();
     }
 
-    return unsub;
-  }, [activeId, order]);
+    return () => {
+      unsubStore();
+      unsubCloud();
+      unsubFirestore();
+    };
+  }, [activeId, order, propShop?.id]);
 
   // Handle user searching for another order number (e.g. "1046" or "ORD-1046")
   const handleSearchOrder = async (queryToSearch: string) => {

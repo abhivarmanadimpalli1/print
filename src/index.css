@@ -38,6 +38,49 @@
   --color-surface: #f6f5f4;
   --color-surface-soft: #fafaf9;
 
+  /* Tactile Radix Palette for Receipt Printer & Magnetic DropZone */
+  --color-grayscale-1: #fcfcfc;
+  --color-grayscale-2: #f9f9f9;
+  --color-grayscale-3: #f0f0f0;
+  --color-grayscale-4: #e8e8e8;
+  --color-grayscale-5: #e0e0e0;
+  --color-grayscale-6: #d8d8d8;
+  --color-grayscale-7: #cecece;
+  --color-grayscale-8: #bbbbbb;
+  --color-grayscale-9: #8d8d8d;
+  --color-grayscale-10: #838383;
+  --color-grayscale-11: #646464;
+  --color-grayscale-12: #1e1e1e;
+
+  --color-blue-1: #fbfdff;
+  --color-blue-2: #f4faff;
+  --color-blue-3: #e6f4fe;
+  --color-blue-4: #d5ecfd;
+  --color-blue-5: #c2e2fc;
+  --color-blue-6: #acd4fa;
+  --color-blue-7: #8ec3f8;
+  --color-blue-8: #5eb1f3;
+  --color-blue-9: #0091ff;
+  --color-blue-10: #0081f1;
+  --color-blue-11: #006adc;
+  --color-blue-12: #00254d;
+
+  --color-green-1: #fbfefc;
+  --color-green-2: #f2fcf5;
+  --color-green-3: #e6f9ed;
+  --color-green-4: #d3f3df;
+  --color-green-5: #bdefd0;
+  --color-green-6: #a3e6be;
+  --color-green-7: #82daa7;
+  --color-green-8: #57c785;
+  --color-green-9: #30a46c;
+  --color-green-10: #299764;
+  --color-green-11: #18794e;
+  --color-green-12: #153226;
+
+  --color-red-9: #e5484d;
+  --color-red-10: #dc3d43;
+
   --color-hairline: #e5e3df;
   --color-hairline-soft: #ede9e4;
   --color-hairline-strong: #c8c4be;
