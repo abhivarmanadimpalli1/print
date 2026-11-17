@@ -27,12 +27,24 @@ export interface FirebaseConfig {
   storageBucket: string;
   messagingSenderId: string;
   appId: string;
+  measurementId?: string;
 }
 
 const FIREBASE_CONFIG_KEY = 'campus_print_firebase_config_v1';
 
-// Get config from localStorage or env variables
-export function getFirebaseConfig(): FirebaseConfig | null {
+// Default config provided by project owner (Abhinav)
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
+  apiKey: "AIzaSyBxE40NVCeNNpu9Zo0Eo87CHUTuXZKRoRE",
+  authDomain: "print-5c970.firebaseapp.com",
+  projectId: "print-5c970",
+  storageBucket: "print-5c970.firebasestorage.app",
+  messagingSenderId: "188104133643",
+  appId: "1:188104133643:web:e780c4ee30140aa7758b0e",
+  measurementId: "G-ZRVE4TMZYD",
+};
+
+// Get config from localStorage, env variables, or default project config
+export function getFirebaseConfig(): FirebaseConfig {
   try {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem(FIREBASE_CONFIG_KEY);
@@ -43,20 +55,20 @@ export function getFirebaseConfig(): FirebaseConfig | null {
     }
   } catch {}
 
-  const envConfig: FirebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  };
-
-  if (envConfig.projectId && envConfig.apiKey) {
-    return envConfig;
+  const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+  if (envApiKey) {
+    return {
+      apiKey: envApiKey,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || DEFAULT_FIREBASE_CONFIG.authDomain,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_CONFIG.projectId,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || DEFAULT_FIREBASE_CONFIG.storageBucket,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || DEFAULT_FIREBASE_CONFIG.messagingSenderId,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID || DEFAULT_FIREBASE_CONFIG.appId,
+      measurementId: DEFAULT_FIREBASE_CONFIG.measurementId,
+    };
   }
 
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function saveFirebaseConfig(config: FirebaseConfig): void {
@@ -70,7 +82,7 @@ export function saveFirebaseConfig(config: FirebaseConfig): void {
 }
 
 export function isFirebaseConfigured(): boolean {
-  return getFirebaseConfig() !== null;
+  return true;
 }
 
 let appInstance: FirebaseApp | null = null;

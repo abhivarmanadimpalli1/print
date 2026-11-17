@@ -22,6 +22,7 @@ import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
 import { uploadPdfToCloud } from '../../lib/cloudSync';
+import { uploadPdfToFirebaseStorage } from '../../lib/firebase';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
 interface CustomerOrderFlowProps {
@@ -182,8 +183,12 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
     try {
       if (rawFile) {
-        // Upload the actual raw PDF binary so the shopkeeper receives the real document
-        const uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
+        // 1. Try uploading to Firebase Cloud Storage first
+        let uploadedUrl = await uploadPdfToFirebaseStorage(shop.id, rawFile, rawFile.name);
+        // 2. If Firebase Storage fails or is not enabled, fall back to high-capacity cloud sync
+        if (!uploadedUrl) {
+          uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
+        }
         if (uploadedUrl) {
           cloudFileUrl = uploadedUrl;
         }
