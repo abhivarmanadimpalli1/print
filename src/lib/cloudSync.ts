@@ -1,18 +1,20 @@
 import type { Order, OrderStatus } from '../types';
 
 /**
- * Cloud Sync Engine for Internet-Wide Multi-Device Synchronization
- * ---------------------------------------------------------------
- * Connects physical smartphones (scanning QR codes via cellular / 4G / WiFi)
- * to the shopkeeper's desktop computer on Vercel with sub-second latency.
- * Uses persistent Server-Sent Events (SSE) and HTTP broadcast over a secure topic.
+ * Cloud Sync & File Transfer Engine for Real In-Shop QR Print Operations
+ * ---------------------------------------------------------------------
+ * Transmits real uploaded customer PDF binaries and order events across
+ * cellular/WiFi devices (phone -> desktop on Vercel) in real-time.
  */
 
 const CLOUD_SYNC_BASE = 'https://ntfy.sh';
 
 export function getShopCloudTopic(shopId: string = 'campus-prints'): string {
-  // Unique topic scoped to the shop
   return `printqr-shop-${shopId}-sync-v1`;
+}
+
+export function getShopFilesTopic(shopId: string = 'campus-prints'): string {
+  return `printqr-files-${shopId}-v1`;
 }
 
 export interface CloudPayload {
@@ -26,7 +28,6 @@ export interface CloudPayload {
   deviceId?: string;
 }
 
-// Generate an ephemeral device ID to avoid echo loops
 const CURRENT_DEVICE_ID = typeof window !== 'undefined'
   ? (sessionStorage.getItem('qr_device_id') || (() => {
       const id = 'dev_' + Math.random().toString(36).substring(2, 9);
@@ -34,6 +35,37 @@ const CURRENT_DEVICE_ID = typeof window !== 'undefined'
       return id;
     })())
   : 'server';
+
+/**
+ * Uploads the actual customer PDF binary to the cloud storage bucket so the shopkeeper
+ * downloads the real, unmodified document with all pages and fonts.
+ */
+export async function uploadPdfToCloud(shopId: string, fileBlob: Blob | File, fileName: string): Promise<string | null> {
+  const topic = getShopFilesTopic(shopId);
+  try {
+    const res = await fetch(`${CLOUD_SYNC_BASE}/${topic}?filename=${encodeURIComponent(fileName)}`, {
+      method: 'PUT',
+      headers: {
+        'Title': `Customer PDF: ${fileName}`,
+        'Filename': fileName,
+      },
+      body: fileBlob,
+    });
+
+    if (!res.ok) {
+      console.warn('[CloudSync] File upload returned status:', res.status);
+      return null;
+    }
+
+    const data = await res.json();
+    if (data.attachment && data.attachment.url) {
+      return data.attachment.url;
+    }
+  } catch (err) {
+    console.warn('[CloudSync] Real PDF file upload failed:', err);
+  }
+  return null;
+}
 
 /**
  * Broadcasts an order or status update to all connected devices over the internet.
@@ -47,13 +79,12 @@ export async function broadcastToCloud(shopId: string, payload: Omit<CloudPayloa
   };
 
   try {
-    // If the order has a very large file payload, strip the base64 binary in the cloud broadcast
-    // so it fits comfortably within the cloud broker's message limits.
+    // Strip large inline base64 string because the real file is referenced by fileDownloadUrl
     const safePayload = { ...fullPayload };
     if (safePayload.order && safePayload.order.fileDataUrl && safePayload.order.fileDataUrl.length > 2500) {
       safePayload.order = {
         ...safePayload.order,
-        fileDataUrl: undefined, // file binary generated or held locally
+        fileDataUrl: undefined,
       };
     }
 
@@ -136,7 +167,6 @@ export function listenToCloud(shopId: string, onMessage: (payload: CloudPayload)
               ? JSON.parse(data.message)
               : data.message;
 
-            // Ignore messages broadcast by this same browser window
             if (payload && payload.deviceId !== CURRENT_DEVICE_ID) {
               onMessage(payload);
             }
@@ -151,7 +181,6 @@ export function listenToCloud(shopId: string, onMessage: (payload: CloudPayload)
           eventSource.close();
           eventSource = null;
         }
-        // Reconnect after brief backoff
         if (!isClosed) {
           setTimeout(connect, 4000);
         }

@@ -17,13 +17,13 @@ export type OrderStatus =
 export interface PaperSizeOption {
   id: PaperSize;
   name: string;
-  multiplier: number; // e.g. 1.0 for A4, 2.0 for A3
+  multiplier: number;
 }
 
 export interface ShopPricing {
-  bwPerPage: number;          // e.g. ₹2.00 / page
-  colorPerPage: number;       // e.g. ₹10.00 / page
-  duplexRateRatio: number;    // e.g. 0.9 (slight discount on double sided) or 1.0
+  bwPerPage: number;
+  colorPerPage: number;
+  duplexRateRatio: number;
   paperSizes: PaperSizeOption[];
 }
 
@@ -37,7 +37,7 @@ export interface Shop {
   openingHours: string;
   pricing: ShopPricing;
   acceptedPaymentModes: PaymentChoice[];
-  retentionMinutes: number;   // e.g. 10 minutes auto-delete post-download/print
+  retentionMinutes: number;
   qrCodeUrl: string;
 }
 
@@ -71,7 +71,8 @@ export interface Order {
   customerNotes?: string;
   fileName: string;
   fileSize: number;
-  fileDataUrl?: string; // stored for demo downloading / printing, purged after 10m
+  fileDataUrl?: string;      // local base64 data URL
+  fileDownloadUrl?: string;  // cloud URL to the REAL uploaded PDF file
   detectedPageCount: number;
   config: PrintJobConfig;
   paymentMode: PaymentChoice;
@@ -85,7 +86,7 @@ export interface Order {
   // 10-Minute Auto-Purge Lifecycle
   downloadedAt?: string;
   printedAt?: string;
-  purgeAt?: string;       // ISO timestamp when document binary is purged
-  isPurged?: boolean;     // true when binary payload is removed from database
+  purgeAt?: string;
+  isPurged?: boolean;
   purgedAt?: string;
 }

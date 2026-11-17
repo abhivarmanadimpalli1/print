@@ -450,6 +450,7 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
   const updated: Order = {
     ...existing,
     fileDataUrl: undefined,
+    fileDownloadUrl: undefined,
     isPurged: true,
     purgedAt: now,
     updatedAt: now,
@@ -482,6 +483,7 @@ export function checkAndPurgeExpiredDocuments(): number {
       return {
         ...order,
         fileDataUrl: undefined,
+        fileDownloadUrl: undefined,
         isPurged: true,
         purgedAt: new Date(now).toISOString(),
         updatedAt: new Date(now).toISOString(),
@@ -620,8 +622,8 @@ function handleIncomingCloudMessage(payload: CloudPayload) {
     const incoming = payload.order;
     const exists = orders.some(o => o.id === incoming.id);
     if (!exists) {
-      // Ensure file data URL is present for download/printing
-      if (!incoming.fileDataUrl && !incoming.isPurged) {
+      // Only fallback to minimal placeholder if neither real cloud file nor local file is present:
+      if (!incoming.fileDataUrl && !incoming.fileDownloadUrl && !incoming.isPurged) {
         incoming.fileDataUrl = generateMinimalPdf(incoming.fileName, incoming.detectedPageCount);
       }
       const updated = [incoming, ...orders];

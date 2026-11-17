@@ -139,20 +139,43 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     updateOrderStatus(orderId, status, note);
   };
 
-  const handleDownloadPdf = (order: Order) => {
-    if (!order.fileDataUrl) {
+  const handleDownloadPdf = async (order: Order) => {
+    if (order.isPurged || (!order.fileDownloadUrl && !order.fileDataUrl)) {
       alert('This document was already permanently purged after 10 minutes to protect customer privacy and keep the database clear.');
       return;
     }
     // Arm the 10-minute auto-purge timer
     markOrderDownloaded(order.id);
 
-    const link = document.createElement('a');
-    link.href = order.fileDataUrl;
-    link.download = order.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // If the document was uploaded to the cloud, download the real original PDF
+    if (order.fileDownloadUrl) {
+      try {
+        const res = await fetch(order.fileDownloadUrl);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = order.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        return;
+      } catch (err) {
+        console.warn('Direct blob fetch failed, falling back to window open:', err);
+        window.open(order.fileDownloadUrl, '_blank');
+        return;
+      }
+    }
+
+    if (order.fileDataUrl) {
+      const link = document.createElement('a');
+      link.href = order.fileDataUrl;
+      link.download = order.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const handleManualPurge = (orderId: string) => {

@@ -21,6 +21,7 @@ import { PaymentModal } from './PaymentModal';
 import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
+import { uploadPdfToCloud } from '../../lib/cloudSync';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
 interface CustomerOrderFlowProps {
@@ -46,6 +47,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   const fileInputId = useId();
   // Upload State
   const [file, setFile] = useState<UploadedFileInfo | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
+  const [isUploadingCloud, setIsUploadingCloud] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Configuration State
@@ -95,6 +98,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   // Quick Preset Document Loader
   const loadPresetFile = (name: string, pages: number, sizeKB: number) => {
     setUploadError(null);
+    setRawFile(null);
     setFile({
       name,
       size: sizeKB * 1024,
@@ -119,6 +123,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     }
 
     setUploadError(null);
+    setRawFile(uploaded);
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -169,8 +174,25 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmitOrder = (isOnlinePaid: boolean = false) => {
+  const handleSubmitOrder = async (isOnlinePaid: boolean = false) => {
     if (!validateForm() || !file) return;
+
+    setIsUploadingCloud(true);
+    let cloudFileUrl: string | undefined = undefined;
+
+    try {
+      if (rawFile) {
+        // Upload the actual raw PDF binary so the shopkeeper receives the real document
+        const uploadedUrl = await uploadPdfToCloud(shop.id, rawFile, rawFile.name);
+        if (uploadedUrl) {
+          cloudFileUrl = uploadedUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed uploading PDF to cloud:', err);
+    } finally {
+      setIsUploadingCloud(false);
+    }
 
     const config: PrintJobConfig = {
       copies,
@@ -193,6 +215,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       fileName: file.name,
       fileSize: file.size,
       fileDataUrl: file.dataUrl,
+      fileDownloadUrl: cloudFileUrl,
       detectedPageCount: file.detectedPages,
       config,
       paymentMode: paymentChoice,
@@ -794,7 +817,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <Button
                 variant="primary"
                 className="w-full text-base font-semibold py-3 shadow-md"
-                disabled={!shop.isOpen}
+                disabled={!shop.isOpen || isUploadingCloud}
                 onClick={() => {
                   if (validateForm()) {
                     if (paymentChoice === 'online') {
@@ -806,7 +829,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 }}
                 icon={<ChevronRight className="w-5 h-5" />}
               >
-                {paymentChoice === 'online'
+                {isUploadingCloud
+                  ? 'Transferring Real Document to Counter...'
+                  : paymentChoice === 'online'
                   ? `Proceed to Payment (₹${estimatedSubtotal.toFixed(2)})`
                   : `Submit Print Order (₹${estimatedSubtotal.toFixed(2)})`}
               </Button>

@@ -15,9 +15,9 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
   onClose,
 }) => {
   const triggerBrowserPrint = () => {
-    // If we have a file data URL, open it in a hidden iframe or new window to trigger print
-    if (order.fileDataUrl) {
-      const printWindow = window.open(order.fileDataUrl, '_blank');
+    const printTarget = order.fileDownloadUrl || order.fileDataUrl;
+    if (printTarget) {
+      const printWindow = window.open(printTarget, '_blank');
       if (printWindow) {
         printWindow.focus();
         setTimeout(() => {
@@ -26,7 +26,7 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
           } catch {
             // popup blocked or browser security
           }
-        }, 500);
+        }, 800);
       }
     } else {
       window.print();
