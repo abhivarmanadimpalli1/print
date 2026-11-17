@@ -17,9 +17,12 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [isOpening, setIsOpening] = useState(false);
-  const attachment = getOrderAttachments(order)[0];
+  const [fileIndex, setFileIndex] = useState(0);
+  const files = getOrderAttachments(order).filter(file => file.storagePath || file.legacyUrl);
+  const attachment = files[fileIndex];
 
   const triggerBrowserPrint = async () => {
+    if (!attachment) return;
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       setError('Allow pop-ups for this site to open the print file.');
@@ -72,9 +75,19 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
           
           {/* Print Specification Summary */}
           <div className="p-3.5 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5 text-xs">
-            <div className="flex justify-between">
-              <span className="text-[#787671]">File:</span>
-              <span className="font-semibold text-[#1a1a1a] truncate max-w-[240px]">{attachment.name}</span>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="order-print-file" className="text-[#787671]">File</label>
+              <select
+                id="order-print-file"
+                className="max-w-[240px] rounded border border-[#e5e3df] bg-white px-2 py-1 font-semibold"
+                value={fileIndex}
+                disabled={isOpening || files.length < 2}
+                onChange={event => setFileIndex(Number(event.target.value))}
+              >
+                {files.map((file, index) => (
+                  <option key={file.storagePath ?? index} value={index}>{file.name}</option>
+                ))}
+              </select>
             </div>
             <div className="flex justify-between">
               <span className="text-[#787671]">Target Setup:</span>
@@ -121,7 +134,7 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
               variant="primary"
               size="sm"
               onClick={() => void triggerBrowserPrint()}
-              disabled={isOpening}
+              disabled={isOpening || !attachment}
               icon={<Printer className="w-4 h-4" />}
             >
               Launch Browser Print Dialog & Set "Printing"

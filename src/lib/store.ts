@@ -8,10 +8,9 @@ import {
 } from './cloudSync';
 import {
   syncOrderToFirestore,
-  syncShopToFirestore,
   listenToAllCityOrdersFromFirestore,
 } from './firebase';
-import { hasVerifiedCounter, removeOrderAttachmentPaths } from './supabase';
+import { archivePublishedShop, hasVerifiedCounter, publishNewShop, removeOrderAttachmentPaths, updatePublishedShop, type PublishedShop } from './supabase';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
@@ -522,20 +521,37 @@ export function getShop(shopIdOrSlug: string = 'campus-prints'): Shop {
   return DEFAULT_SHOP;
 }
 
-export function saveShop(shop: Shop): void {
+export function cacheShop(shop: Shop): void {
   try {
     const raw = localStorage.getItem(SHOPS_KEY);
     const shops: Record<string, Shop> = raw ? JSON.parse(raw) : { ...INITIAL_SHOPS };
     shops[shop.id] = shop;
     localStorage.setItem(SHOPS_KEY, JSON.stringify(shops));
     notifyLocalUpdate();
-    syncShopToFirestore(shop).catch(() => {});
   } catch (err) {
     console.error('Failed saving shop to localStorage', err);
   }
 }
 
-export function addNewStore(newShopData: Partial<Shop> & { name: string; ownerName?: string; ownerPhone?: string }): Shop {
+export function hydratePublishedShop(row: PublishedShop): Shop {
+  const fallback = getAllShops().find(shop => shop.id === row.shop_id) ?? DEFAULT_SHOP;
+  const { loginId, passwordHash, ...cached } = fallback;
+  return {
+    ...cached,
+    ...row.profile,
+    ...row.management,
+    counterEmail: row.counter_email ?? undefined,
+    id: row.shop_id,
+    slug: row.shop_id,
+  };
+}
+
+export async function saveShop(shop: Shop): Promise<void> {
+  await updatePublishedShop(shop);
+  cacheShop(shop);
+}
+
+export async function addNewStore(newShopData: Partial<Shop> & { name: string }, counterEmail: string): Promise<Shop> {
   const slug = (newShopData.slug || newShopData.id || newShopData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')) || `shop-${Date.now()}`;
   const id = slug;
   
@@ -552,8 +568,6 @@ export function addNewStore(newShopData: Partial<Shop> & { name: string; ownerNa
     phone: newShopData.phone || newShopData.ownerPhone || '+91 98000 00000',
     ownerName: newShopData.ownerName || 'Store Manager',
     ownerPhone: newShopData.ownerPhone || newShopData.phone || '+91 98000 00000',
-    loginId: newShopData.loginId || slug.replace(/-/g, '_'),
-    passwordHash: newShopData.passwordHash || Math.floor(1000 + Math.random() * 9000).toString(),
     monthlySubscriptionFee: newShopData.monthlySubscriptionFee || 499,
     subscriptionStatus: newShopData.subscriptionStatus || 'active',
     subscriptionRenewDate: newShopData.subscriptionRenewDate || new Date(Date.now() + 30 * 86400000).toISOString(),
@@ -576,11 +590,13 @@ export function addNewStore(newShopData: Partial<Shop> & { name: string; ownerNa
     qrCodeUrl,
   };
 
-  saveShop(createdShop);
+  await publishNewShop(createdShop, counterEmail);
+  cacheShop(createdShop);
   return createdShop;
 }
 
-export function deleteStore(shopId: string): void {
+export async function deleteStore(shopId: string): Promise<void> {
+  await archivePublishedShop(shopId);
   try {
     const raw = localStorage.getItem(SHOPS_KEY);
     const shops: Record<string, Shop> = raw ? JSON.parse(raw) : { ...INITIAL_SHOPS };
@@ -600,7 +616,7 @@ export function verifyStoreCredentials(shopIdOrSlug: string, loginId: string, se
   return matchId && matchSecret;
 }
 
-export function getCityPlatformMetrics(): {
+export function getCityPlatformMetrics(shops = getAllShops()): {
   totalShops: number;
   activeSubscriptions: number;
   monthlyRecurringRevenue: number;
@@ -608,7 +624,6 @@ export function getCityPlatformMetrics(): {
   totalCityGrossSales: number;
   totalCityPagesPrinted: number;
 } {
-  const shops = getAllShops();
   const orders = getAllOrders();
 
   const activeSubs = shops.filter(s => s.subscriptionStatus === 'active' || s.subscriptionStatus === 'trial').length;
@@ -705,13 +720,8 @@ export async function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 
     updatedAt: now,
   };
 
-  if (newOrder.attachments) {
-    if (!(await syncOrderToFirestore(newOrder))) {
-      throw new Error('The order could not be saved. Please try again.');
-    }
-  } else {
-    void syncOrderToFirestore(newOrder);
-    void broadcastToCloud(newOrder.shopId, { action: 'CREATE_ORDER', order: newOrder });
+  if (!(await syncOrderToFirestore(newOrder))) {
+    throw new Error('The order could not be saved. Please try again.');
   }
   try {
     saveOrderToLocal(newOrder);

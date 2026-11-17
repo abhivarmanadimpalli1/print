@@ -618,7 +618,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     size="md"
                     onClick={() => setOrderToPrint(selectedOrder)}
                     icon={<Printer className="w-4 h-4" />}
-                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged || availableAttachments.length !== 1}
+                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged || !availableAttachments.length}
                   >
                     {selectedOrder.isPurged ? 'PDF Purged' : 'Print via Browser'}
                   </Button>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Building2,
   DollarSign,
@@ -8,8 +8,6 @@ import {
   ExternalLink,
   MessageCircle,
   Key,
-  Eye,
-  EyeOff,
   Trash2,
   Sparkles,
   ArrowLeft,
@@ -23,12 +21,13 @@ import {
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import {
-  getAllShops,
+  hydratePublishedShop,
   addNewStore,
   deleteStore,
   getCityPlatformMetrics,
   getOrders,
 } from '../../lib/store';
+import { assignShopCounter, createCounterSetupLink, isPlatformAdmin, listManagedShops, signInToPlatform, signOutFromCounter } from '../../lib/supabase';
 import {
   getFirebaseConfig,
   saveFirebaseConfig,
@@ -46,24 +45,17 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   onBackToStore,
   onSelectShopToView,
 }) => {
-  // Authentication gate for Abhinav
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem('admin_auth_abhinav') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>('');
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [isSavingStore, setIsSavingStore] = useState(false);
 
   // Data state
-  const [shops, setShops] = useState<Shop[]>(() => getAllShops());
+  const [shops, setShops] = useState<Shop[]>([]);
   const [metrics, setMetrics] = useState(() => getCityPlatformMetrics());
-
-  // Show/hide passwords
-  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
 
   // Add store modal
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -72,8 +64,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const [newStoreSlug, setNewStoreSlug] = useState<string>('');
   const [newStoreOwner, setNewStoreOwner] = useState<string>('');
   const [newStorePhone, setNewStorePhone] = useState<string>('');
-  const [newStoreLoginId, setNewStoreLoginId] = useState<string>('');
-  const [newStorePin, setNewStorePin] = useState<string>(() => Math.floor(1000 + Math.random() * 9000).toString());
+  const [newStoreCounterEmail, setNewStoreCounterEmail] = useState('');
   const [newStoreMonthlyFee, setNewStoreMonthlyFee] = useState<number>(499);
   const [newStoreBwRate, setNewStoreBwRate] = useState<number>(2.0);
   const [newStoreColorRate, setNewStoreColorRate] = useState<number>(10.0);
@@ -93,12 +84,27 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const [simulatedShopsCount, setSimulatedShopsCount] = useState<number>(30);
   const [simulatedMonthlyFee, setSimulatedMonthlyFee] = useState<number>(499);
 
-  const refreshData = () => {
-    setShops(getAllShops());
-    setMetrics(getCityPlatformMetrics());
+  const refreshData = useCallback(async () => {
+    const registered = (await listManagedShops()).map(hydratePublishedShop);
+    setShops(registered);
+    setMetrics(getCityPlatformMetrics(registered));
     setIsFirebaseLive(isFirebaseConfigured());
     setCurrentFirebaseConfig(getFirebaseConfig());
-  };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void isPlatformAdmin().then(async authorized => {
+      if (!active || !authorized) return;
+      setIsAdminAuthenticated(true);
+      await refreshData();
+    }).catch(error => {
+      if (active) setAdminAuthError(error.message);
+    }).finally(() => {
+      if (active) setIsCheckingAdmin(false);
+    });
+    return () => { active = false; };
+  }, [refreshData]);
 
   const handleConnectFirebase = (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +165,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
 
       setTimeout(() => {
         setShowFirebaseModal(false);
-        refreshData();
+        void refreshData().catch(error => setStoreError(error.message));
       }, 1500);
     } catch (err: unknown) {
       setFirebaseStatusMsg({
@@ -169,20 +175,23 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     }
   };
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPasswordInput.trim().toLowerCase() === 'abhinav' || adminPasswordInput.trim() === 'abhinav2026' || adminPasswordInput.trim() === '1234') {
-      try {
-        sessionStorage.setItem('admin_auth_abhinav', 'true');
-      } catch {}
+    setAdminAuthError(null);
+    setIsCheckingAdmin(true);
+    try {
+      await signInToPlatform(adminEmail.trim(), adminPasswordInput);
+      await refreshData();
+      setAdminPasswordInput('');
       setIsAdminAuthenticated(true);
-      setAdminAuthError(null);
-    } else {
-      setAdminAuthError('Incorrect master admin password. (Hint: abhinav2026)');
+    } catch (error) {
+      setAdminAuthError(error instanceof Error ? error.message : 'Could not sign in to the platform.');
+    } finally {
+      setIsCheckingAdmin(false);
     }
   };
 
-  const handleAddStoreSubmit = (e: React.FormEvent) => {
+  const handleAddStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStoreName.trim()) {
       alert('Please provide a store name.');
@@ -191,29 +200,37 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
 
     const generatedSlug = (newStoreSlug.trim() || newStoreName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''));
 
-    const created = addNewStore({
-      name: newStoreName.trim(),
-      slug: generatedSlug,
-      location: newStoreLocation.trim() || 'Central City Bookstore',
-      ownerName: newStoreOwner.trim() || 'Bookstore Owner',
-      ownerPhone: newStorePhone.trim() || '+91 98000 00000',
-      loginId: newStoreLoginId.trim() || generatedSlug.replace(/-/g, '_'),
-      passwordHash: newStorePin.trim() || '1234',
-      monthlySubscriptionFee: Number(newStoreMonthlyFee) || 499,
-      subscriptionStatus: newStoreStatus,
-      pricing: {
-        bwPerPage: Number(newStoreBwRate) || 2.0,
-        colorPerPage: Number(newStoreColorRate) || 10.0,
-        duplexRateRatio: 0.9,
-        paperSizes: [
-          { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
-          { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
-          { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
-        ],
-      },
-    });
-
-    refreshData();
+    setStoreError(null);
+    setIsSavingStore(true);
+    let created: Shop;
+    try {
+      created = await addNewStore({
+        name: newStoreName.trim(),
+        slug: generatedSlug,
+        location: newStoreLocation.trim() || 'Local Print Shop',
+        ownerName: newStoreOwner.trim() || 'Shop Owner',
+        ownerPhone: newStorePhone.trim() || '+91 98000 00000',
+        monthlySubscriptionFee: Number(newStoreMonthlyFee) || 499,
+        subscriptionStatus: newStoreStatus,
+        pricing: {
+          bwPerPage: Number(newStoreBwRate) || 2.0,
+          colorPerPage: Number(newStoreColorRate) || 10.0,
+          duplexRateRatio: 0.9,
+          paperSizes: [
+            { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+            { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
+            { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
+          ],
+        },
+      }, newStoreCounterEmail.trim());
+    } catch (error) {
+      setStoreError(error instanceof Error ? error.message : 'Could not create this store.');
+      return;
+    } finally {
+      setIsSavingStore(false);
+    }
+    setShops(previous => [...previous, { ...created, counterEmail: newStoreCounterEmail.trim() || undefined }]);
+    void refreshData().catch(error => setStoreError(error.message));
     setShowAddModal(false);
     // Reset form
     setNewStoreName('');
@@ -221,16 +238,20 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     setNewStoreSlug('');
     setNewStoreOwner('');
     setNewStorePhone('');
-    setNewStoreLoginId('');
-    setNewStorePin(Math.floor(1000 + Math.random() * 9000).toString());
+    setNewStoreCounterEmail('');
 
     alert(`✓ Successfully onboarded "${created.name}"! Unique URL: /s/${created.slug}`);
   };
 
-  const handleDeleteStore = (shopId: string, shopName: string) => {
+  const handleDeleteStore = async (shopId: string, shopName: string) => {
     if (window.confirm(`Are you sure you want to remove "${shopName}" from the platform?`)) {
-      deleteStore(shopId);
-      refreshData();
+      try {
+        await deleteStore(shopId);
+        setShops(previous => previous.filter(shop => shop.id !== shopId));
+        await refreshData();
+      } catch (error) {
+        setStoreError(error instanceof Error ? error.message : 'Could not remove this store.');
+      }
     }
   };
 
@@ -240,11 +261,31 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     setTimeout(() => setCopiedSlug(null), 2000);
   };
 
-  const togglePasswordReveal = (shopId: string) => {
-    setRevealedPasswords(prev => ({
-      ...prev,
-      [shopId]: !prev[shopId],
-    }));
+  const updateCounterEmail = async (shop: Shop) => {
+    const email = window.prompt(`Counter account email for ${shop.name}. Leave blank for platform access only.`, shop.counterEmail ?? '');
+    if (email === null) return;
+    const value = email.trim();
+    if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setStoreError('Enter a valid counter email.');
+      return;
+    }
+    try {
+      setStoreError(null);
+      await assignShopCounter(shop.id, value);
+      await refreshData();
+    } catch (error) {
+      setStoreError(error instanceof Error ? error.message : 'Could not update counter access.');
+    }
+  };
+
+  const prepareCounterDevice = async (shop: Shop) => {
+    setStoreError(null);
+    try {
+      const link = await createCounterSetupLink(shop.id);
+      window.prompt(`Copy this one-use link for ${shop.name}. It expires in 24 hours and replaces the previous device when activated.`, link);
+    } catch (error) {
+      setStoreError(error instanceof Error ? error.message : 'Could not create the counter setup link.');
+    }
   };
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://print.vercel.app';
@@ -260,26 +301,38 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             </div>
             <h2 className="text-lg font-bold text-[#1a1a1a]">Platform Owner Portal</h2>
             <p className="text-xs text-[#787671] mt-1">
-              Welcome back, <strong>Abhinav</strong>. Enter your master passcode to access city bookstore management and revenue analytics.
+              Sign in with your platform owner account to manage print shops.
             </p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
-                Master Passcode:
+                Owner email
+              </label>
+              <input
+                type="email"
+                required
+                autoComplete="username"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
+                Password
               </label>
               <input
                 type="password"
                 value={adminPasswordInput}
                 onChange={(e) => setAdminPasswordInput(e.target.value)}
-                placeholder="Enter passcode (e.g. abhinav2026)"
+                placeholder="Enter password"
+                autoComplete="current-password"
+                required
                 className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono"
                 autoFocus
               />
-              <p className="text-[10px] text-[#787671] mt-1">
-                Default Master Passcode: <span className="font-mono font-bold text-[#5645d4]">abhinav2026</span>
-              </p>
             </div>
 
             {adminAuthError && (
@@ -291,9 +344,10 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             <Button
               type="submit"
               variant="primary"
+              disabled={isCheckingAdmin}
               className="w-full py-2.5 text-xs font-semibold"
             >
-              Unlock Master Admin Portal
+              {isCheckingAdmin ? 'Checking access…' : 'Sign in to platform'}
             </Button>
 
             <button
@@ -323,21 +377,24 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             <span className="text-xs text-[#a4a097]">Owned & Managed by Abhinav</span>
           </div>
           <h1 className="text-xl font-bold tracking-tight text-white">
-            City Bookstore Print Network & Revenue Command
+            Print Shop Management
           </h1>
           <p className="text-xs text-[#a4a097] mt-0.5">
-            Onboard local bookstores, manage their unique URLs & passwords, and track monthly SaaS subscription income.
+            Set up print shops, share customer upload links, and assign counter access.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
+          <Button variant="ghost" size="sm" className="text-white hover:bg-white/10" onClick={() => {
+            void signOutFromCounter().then(() => { setIsAdminAuthenticated(false); setShops([]); }).catch(error => setStoreError(error.message));
+          }}>Sign out</Button>
           <Button
             variant="primary"
             size="sm"
             onClick={() => setShowAddModal(true)}
             icon={<Plus className="w-4 h-4" />}
           >
-            Onboard New Bookstore
+            Add New Store
           </Button>
 
           <Button
@@ -531,9 +588,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
       <Card className="bg-white border border-[#e5e3df] rounded-[12px] shadow-xs overflow-hidden">
         <div className="p-4 border-b border-[#e5e3df] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-[#1a1a1a]">City Bookstore Network Directory</h2>
+            <h2 className="text-sm font-bold text-[#1a1a1a]">Print Shops</h2>
             <p className="text-xs text-[#787671]">
-              Every bookstore has its own independent URL, login credentials, and customer QR standee.
+              Each shop has its own customer upload link and counter.
             </p>
           </div>
           <Button
@@ -545,6 +602,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             Add New Store
           </Button>
         </div>
+        {storeError && !showAddModal && <p role="alert" className="px-4 py-2 text-xs text-[#d44c47]">{storeError}</p>}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -552,7 +610,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
               <tr>
                 <th className="py-3 px-4">Bookstore & Location</th>
                 <th className="py-3 px-4">Unique Customer URL</th>
-                <th className="py-3 px-4">Login Credentials (ID & PIN)</th>
+                <th className="py-3 px-4">Counter access</th>
                 <th className="py-3 px-4">Owner Contact</th>
                 <th className="py-3 px-4">Monthly SaaS Fee</th>
                 <th className="py-3 px-4">Orders & Sales</th>
@@ -565,10 +623,9 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                 const grossSales = shopOrders.reduce((sum, o) => sum + (o.config?.subtotal || 0), 0);
                 const uniqueCustomerUrl = `${origin}/s/${s.slug}`;
                 const shopCounterUrl = `${origin}/s/${s.slug}/counter`;
-                const isPasswordShown = revealedPasswords[s.id] || false;
 
                 const whatsappMessage = encodeURIComponent(
-                  `Hello ${s.ownerName || 'Sir'}! Welcome to Campus QuickPrint.\n\nHere are your store credentials:\n🏪 Store: ${s.name}\n\n💻 *Shopkeeper Counter Portal:* (Open on counter PC)\n🔗 ${shopCounterUrl}\n🔐 Login ID: ${s.loginId || s.slug}\n🔑 Password/PIN: ${s.passwordHash || '1234'}\n\n📲 *Customer QR Ordering Link:* (Display for students)\n🔗 ${uniqueCustomerUrl}\n\nStudents scan this to place print jobs directly to your counter!`
+                  `Hello ${s.ownerName || 'there'}! Here are the links for ${s.name}.\n\nCounter: ${shopCounterUrl}\nSign in with your assigned email or use your one-time counter setup link.\n\nCustomer uploads: ${uniqueCustomerUrl}`
                 );
                 const whatsappUrl = `https://wa.me/${(s.ownerPhone || s.phone || '').replace(/[^0-9]/g, '')}?text=${whatsappMessage}`;
 
@@ -598,7 +655,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                             type="button"
                             onClick={() => copyToClipboard(uniqueCustomerUrl, `${s.id}_cust`)}
                             className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
-                            title="Copy Student QR URL"
+                            title="Copy customer upload link"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
@@ -607,7 +664,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                             target="_blank"
                             rel="noreferrer"
                             className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
-                            title="Open Student Kiosk"
+                            title="Open customer uploads"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -645,28 +702,15 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                       </div>
                     </td>
 
-                    {/* Credentials */}
                     <td className="py-3 px-4">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1">
-                          <span className="text-[#787671] text-[10px]">ID:</span>
-                          <span className="font-mono font-semibold text-[#1a1a1a]">
-                            {s.loginId || s.slug}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[#787671] text-[10px]">PIN:</span>
-                          <span className="font-mono font-semibold text-[#5645d4]">
-                            {isPasswordShown ? (s.passwordHash || '1234') : '••••'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => togglePasswordReveal(s.id)}
-                            className="p-0.5 hover:text-[#1a1a1a] text-[#787671] cursor-pointer"
-                          >
-                            {isPasswordShown ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                          </button>
-                        </div>
+                        <div>{s.counterEmail || 'Platform owner'}</div>
+                        <button type="button" className="text-[#5645d4] underline" onClick={() => void updateCounterEmail(s)}>
+                          Edit counter email
+                        </button>
+                        <button type="button" className="block text-[#5645d4] underline" onClick={() => void prepareCounterDevice(s)}>
+                          Get counter setup link
+                        </button>
                       </div>
                     </td>
 
@@ -724,7 +768,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                           target="_blank"
                           rel="noreferrer"
                           className="p-1.5 bg-[#e6f4ea] text-[#137333] hover:bg-[#cbf0d8] rounded-[6px] transition-colors"
-                          title="Send Credentials to Owner on WhatsApp"
+                          title="Share store links on WhatsApp"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
                         </a>
@@ -775,7 +819,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
               {/* Store Name */}
               <div>
                 <label className="block text-xs font-semibold text-[#37352f] mb-1">
-                  Bookstore / Xerox Center Name: *
+                  Print shop name
                 </label>
                 <input
                   type="text"
@@ -851,49 +895,19 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Login Credentials for Store Owner */}
-              <div className="p-3 bg-[#faf9f8] rounded-[10px] border border-[#e5e3df] space-y-3">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-[#1a1a1a]">
-                  <Key className="w-3.5 h-3.5 text-[#5645d4]" />
-                  <span>Store Owner Login Credentials (Assigned by Abhinav)</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#37352f] mb-1">
-                      Store Login ID:
-                    </label>
-                    <input
-                      type="text"
-                      value={newStoreLoginId}
-                      onChange={(e) => setNewStoreLoginId(e.target.value)}
-                      placeholder="e.g. balaji_xerox"
-                      className="w-full text-xs px-2.5 py-1.5 bg-white border border-[#e5e3df] rounded-[6px] text-[#1a1a1a] font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#37352f] mb-1">
-                      Secret PIN / Password:
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={newStorePin}
-                        onChange={(e) => setNewStorePin(e.target.value)}
-                        placeholder="4-digit PIN"
-                        className="w-full text-xs px-2.5 py-1.5 bg-white border border-[#e5e3df] rounded-[6px] text-[#1a1a1a] font-mono font-bold"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setNewStorePin(Math.floor(1000 + Math.random() * 9000).toString())}
-                        className="px-2 py-1.5 text-[10px] bg-white border border-[#e5e3df] rounded-[6px] hover:bg-[#f6f5f4] cursor-pointer"
-                        title="Generate Random PIN"
-                      >
-                        🎲
-                      </button>
-                    </div>
-                  </div>
-                </div>
+              <div>
+                <label htmlFor="new-counter-email" className="block text-xs font-semibold text-[#37352f] mb-1">
+                  Shop owner’s counter email
+                </label>
+                <input
+                  id="new-counter-email"
+                  type="email"
+                  value={newStoreCounterEmail}
+                  onChange={(e) => setNewStoreCounterEmail(e.target.value)}
+                  placeholder="owner@example.com"
+                  className="w-full text-xs px-3 py-2 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px]"
+                />
+                <p className="mt-1 text-xs text-[#787671]">Use an existing counter account, or leave this blank and give the shop a one-time device setup link after creation.</p>
               </div>
 
               {/* SaaS Subscription Fee & Rates */}
@@ -952,12 +966,14 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
 
               {/* Submit */}
               <div className="pt-2">
+                {storeError && <p role="alert" className="mb-2 text-xs text-[#d44c47]">{storeError}</p>}
                 <Button
                   type="submit"
                   variant="primary"
+                  disabled={isSavingStore}
                   className="w-full py-2.5 text-xs font-semibold"
                 >
-                  Create Bookstore & Generate Counter Kit
+                  {isSavingStore ? 'Publishing store…' : 'Create print shop'}
                 </Button>
               </div>
 

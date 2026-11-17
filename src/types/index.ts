@@ -43,6 +43,7 @@ export interface Shop {
   // Multi-Store & SaaS Owner Management:
   ownerName?: string;             // Bookstore owner's name
   ownerPhone?: string;            // WhatsApp contact for billing & support
+  counterEmail?: string;          // Assigned counter email, visible to platform admins
   loginId?: string;               // Bookstore login ID (e.g. "srikrishna")
   passwordHash?: string;          // Password or 4-digit PIN (e.g. "7845")
   monthlySubscriptionFee?: number;// e.g. ₹499/month paid to Abhinav

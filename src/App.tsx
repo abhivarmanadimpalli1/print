@@ -9,12 +9,14 @@ import { ShopLoginScreen } from './components/shop/ShopLoginScreen';
 import { SuperAdminDashboard } from './components/admin/SuperAdminDashboard';
 import {
   getShop,
+  cacheShop,
+  hydratePublishedShop,
   getOrders,
   resetDemoData,
   subscribeToStore,
 } from './lib/store';
 import type { Shop } from './types';
-import { canAccessCounter, signOutFromCounter, supportsPrivateUploads } from './lib/supabase';
+import { canAccessCounter, getPublishedShop, signOutFromCounter } from './lib/supabase';
 
 function parseInitialRoute(): {
   shopSlug: string;
@@ -66,16 +68,36 @@ function parseInitialRoute(): {
 }
 
 export function App() {
-  const initialRoute = parseInitialRoute();
+  const [initialRoute] = useState(parseInitialRoute);
+  const [requestedShop, setRequestedShop] = useState(initialRoute.shopSlug);
+  const [shopLookup, setShopLookup] = useState<{ shopId: string; error: string | null } | null>(null);
   const [shop, setShop] = useState<Shop>(() => getShop(initialRoute.shopSlug));
   const [currentView, setCurrentView] = useState<'customer' | 'shop' | 'settings' | 'admin'>(initialRoute.view);
   const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(initialRoute.orderId);
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
 
   const [isStoreAuthenticated, setIsStoreAuthenticated] = useState(false);
-  const [counterMode, setCounterMode] = useState<{ shopId: string; privateFiles: boolean } | null>(null);
+  const [checkedCounter, setCheckedCounter] = useState<string | null>(null);
   const [counterError, setCounterError] = useState<string | null>(null);
-  const privateFiles = counterMode?.shopId === shop.id ? counterMode.privateFiles : undefined;
+  const counterReady = checkedCounter === shop.id;
+
+  useEffect(() => {
+    let active = true;
+    void getPublishedShop(requestedShop).then(row => {
+      if (!active) return;
+      if (!row) {
+        setShopLookup({ shopId: requestedShop, error: 'This store is unavailable.' });
+        return;
+      }
+      const published = hydratePublishedShop(row);
+      cacheShop(published);
+      setShop(published);
+      setShopLookup({ shopId: requestedShop, error: null });
+    }).catch(() => {
+      if (active) setShopLookup({ shopId: requestedShop, error: 'Could not load this store. Refresh to try again.' });
+    });
+    return () => { active = false; };
+  }, [requestedShop]);
 
   // Update URL history to reflect clean role-based paths
   const updateBrowserUrl = useCallback((targetShop: Shop, view: 'customer' | 'shop' | 'settings' | 'admin') => {
@@ -96,25 +118,23 @@ export function App() {
   // Check store session whenever shop changes
   useEffect(() => {
     if (currentView !== 'shop' && currentView !== 'settings') return;
+    if (shopLookup?.shopId !== requestedShop || shopLookup.error) return;
     let active = true;
     async function checkCounter() {
-      const enabled = await supportsPrivateUploads(shop.id);
-      const authorized = enabled
-        ? await canAccessCounter(shop.id)
-        : sessionStorage.getItem(`store_auth_${shop.id}`) === 'true';
+      const authorized = await canAccessCounter(shop.id);
       if (!active) return;
       setCounterError(null);
       setIsStoreAuthenticated(authorized);
-      setCounterMode({ shopId: shop.id, privateFiles: enabled });
+      setCheckedCounter(shop.id);
     }
     void checkCounter().catch(() => {
       if (!active) return;
-      setCounterMode(null);
+      setCheckedCounter(null);
       setIsStoreAuthenticated(false);
       setCounterError('Could not check counter access. Reload the page to try again.');
     });
     return () => { active = false; };
-  }, [shop.id, currentView]);
+  }, [shop.id, currentView, requestedShop, shopLookup]);
 
   // Secret shortcut for shopkeeper: Alt + L toggles counter view on counter PC
   useEffect(() => {
@@ -148,6 +168,8 @@ export function App() {
 
   const handleSelectShop = (newShop: Shop) => {
     setIsStoreAuthenticated(false);
+    setCheckedCounter(null);
+    setRequestedShop(newShop.id);
     setShop(newShop);
     setActiveTrackingOrderId(null);
     setCurrentView('customer');
@@ -163,14 +185,17 @@ export function App() {
   };
 
   const handleStoreLogout = () => {
-    if (privateFiles) void signOutFromCounter().catch(console.warn);
-    try {
-      sessionStorage.removeItem(`store_auth_${shop.id}`);
-    } catch {}
+    void signOutFromCounter().catch(console.warn);
     setIsStoreAuthenticated(false);
     setCurrentView('customer');
     updateBrowserUrl(shop, 'customer');
   };
+
+  if (currentView !== 'admin' && (shopLookup?.shopId !== requestedShop || shopLookup.error)) {
+    return <main className="p-8 text-center" role="status">
+      {shopLookup?.shopId === requestedShop ? shopLookup.error : 'Loading print shop…'}
+    </main>;
+  }
 
   const handleResetDemo = () => {
     if (window.confirm('Reset sample queue orders and default city bookstore network?')) {
@@ -238,17 +263,16 @@ export function App() {
         )}
 
         {/* 2. SHOPKEEPER VIEW: Dedicated Counter Portal */}
-        {(currentView === 'shop' || currentView === 'settings') && privateFiles === undefined && (
+        {(currentView === 'shop' || currentView === 'settings') && !counterReady && (
           <p role="status" className="p-6 text-center">{counterError ?? 'Checking counter access…'}</p>
         )}
-        {currentView === 'shop' && privateFiles !== undefined && (
+        {currentView === 'shop' && counterReady && (
           isStoreAuthenticated ? (
             <ShopDashboard shop={shop} />
           ) : (
             <ShopLoginScreen
               key={shop.id}
               shop={shop}
-              privateFiles={privateFiles}
               onLoginSuccess={(authedShop) => {
                 setShop(authedShop);
                 setIsStoreAuthenticated(true);
@@ -263,14 +287,13 @@ export function App() {
         )}
 
         {/* 3. SHOP SETTINGS VIEW: (Protected) */}
-        {currentView === 'settings' && privateFiles !== undefined && (
+        {currentView === 'settings' && counterReady && (
           isStoreAuthenticated ? (
             <ShopSettings shop={shop} onShopUpdated={(updated) => setShop(updated)} />
           ) : (
             <ShopLoginScreen
               key={shop.id}
               shop={shop}
-              privateFiles={privateFiles}
               onLoginSuccess={(authedShop) => {
                 setShop(authedShop);
                 setIsStoreAuthenticated(true);
@@ -293,6 +316,8 @@ export function App() {
             }}
             onSelectShopToView={(selected) => {
               setShop(selected);
+              setRequestedShop(selected.id);
+              setCheckedCounter(null);
               setIsStoreAuthenticated(false);
               setCurrentView('shop');
               updateBrowserUrl(selected, 'shop');

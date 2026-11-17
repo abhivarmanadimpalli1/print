@@ -26,22 +26,32 @@ interface ShopSettingsProps {
 export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated }) => {
   const [formData, setFormData] = useState<Shop>({ ...shop });
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
   const [pingSuccess, setPingSuccess] = useState<boolean>(false);
 
   const customerUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}?view=customer&shop=${shop.id}`
+    ? `${window.location.origin}/s/${shop.slug}`
     : `https://campusprint.local/order/${shop.id}`;
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(customerUrl)}`;
   const cloudTopic = getShopCloudTopic(shop.id);
 
-  const handleSave = () => {
-    saveShop(formData);
-    onShopUpdated(formData);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await saveShop(formData);
+      onShopUpdated(formData);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2500);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save shop settings.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -86,7 +96,8 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
               <CheckCircle2 className="w-4 h-4" /> Saved!
             </span>
           )}
-          <Button variant="primary" onClick={handleSave}>
+          {saveError && <p role="alert" className="text-xs text-[#d44c47]">{saveError}</p>}
+          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
             Save Changes
           </Button>
         </div>

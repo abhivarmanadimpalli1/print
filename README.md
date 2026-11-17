@@ -93,7 +93,7 @@ work/
 
 ## 🔒 Document Privacy & Retention
 
-Shops with a Supabase counter account keep original files in the private `print-files` bucket. The uploader and authorized staff for the order's shop can access them. Firestore holds the order record and filenames. Shops awaiting setup use the existing single-file upload and counter login.
+All registered shops receive multi-file orders by default. The private Supabase `print-files` bucket holds each original. The uploading customer, the shop's authorized counter, and the platform owner can access the files. Firestore holds the order record and filenames.
 
 ### Supabase setup
 
@@ -108,4 +108,11 @@ Shops with a Supabase counter account keep original files in the private `print-
    on conflict do nothing;
    ```
 
-5. Deploy with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` set to the project values. The app uses the publishable key and Supabase Auth. Staff sign in to the counter with their email and password.
+5. Apply [the shop onboarding migration](supabase/migrations/20261117010000_shop_onboarding.sql). Its one-time bootstrap uses the confirmed account assigned to `campus-prints` as the platform owner.
+6. Deploy with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` set to the project values.
+
+### Add a print shop
+
+Sign in at `/admin` with the platform owner’s email and password and select **Add New Store**. The customer upload link works on other devices as soon as the shop is created. Customers can submit multiple files in one order. At the counter, each original has its own download button, and **Download All** saves the originals separately.
+
+Assign an existing shop owner’s verified email, or use **Get counter setup link** and open the link in the owner’s counter browser. The setup link expires after 24 hours and can be used once. Activating a new browser replaces the shop’s previously paired browser. If the owner signs out of a paired browser or clears browser data, issue a new link.

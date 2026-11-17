@@ -28,8 +28,7 @@ import { MagneticDropZone } from './MagneticDropZone';
 import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
-import { maxOrderFileSize, removeOrderAttachmentPaths, supportsPrivateUploads } from '../../lib/supabase';
-import { uploadLegacyFile } from '../../lib/cloudSync';
+import { maxOrderFileSize, removeOrderAttachmentPaths } from '../../lib/supabase';
 import { uploadOrderAttachments } from '../../lib/orderAttachments';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
@@ -288,19 +287,12 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     let uploaded: Awaited<ReturnType<typeof uploadOrderAttachments>> = [];
     let newOrder: Order;
     try {
-      const privateUploads = await supportsPrivateUploads(shop.id);
-      if (!privateUploads && docList.length > 1) {
-        throw new Error('This counter currently accepts one file per order. Submit each file separately.');
-      }
       const files = await Promise.all(docList.map(async (doc) => {
         if (!doc.rawFile && !doc.dataUrl) throw new Error('File content is unavailable.');
         const blob = doc.rawFile ?? await (await fetch(doc.dataUrl ?? '')).blob();
         return { name: doc.name, blob };
       }));
-      if (privateUploads) uploaded = await uploadOrderAttachments(shop.id, files);
-      const fileDownloadUrl = privateUploads || !docList[0].rawFile
-        ? undefined
-        : await uploadLegacyFile(shop.id, files[0].name, files[0].blob);
+      uploaded = await uploadOrderAttachments(shop.id, files);
       newOrder = await createOrder({
         shopId: shop.id,
         customerName: customerName.trim(),
@@ -308,9 +300,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         customerNotes: customerNotes.trim() || undefined,
         fileName: primaryFileName,
         fileSize: totalSize,
-        attachments: privateUploads ? uploaded : undefined,
-        fileDownloadUrl,
-        fileDataUrl: !privateUploads && !fileDownloadUrl ? docList[0].dataUrl : undefined,
+        attachments: uploaded,
         detectedPageCount: totalPagesInDoc,
         config,
         paymentMode: isOnlinePaid ? 'online' : 'counter',
@@ -435,12 +425,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 shrink-0" />
           <span>
-            <strong>100% Free Self-Service:</strong> Zero app fees, zero student surcharges. Direct shop counter pricing only!
+            <strong>No app fees.</strong> Pay the shop’s listed print price.
           </span>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider bg-white/80 px-2 py-0.5 rounded-full text-[#1aae39]">
-          Free Student Pilot
-        </span>
       </div>
 
       {/* Quick Order Tracking Banner (Find Order by #1046) */}

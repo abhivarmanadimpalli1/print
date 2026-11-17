@@ -2,60 +2,43 @@ import React, { useState } from 'react';
 import { Store, Eye, EyeOff, Lock, ArrowLeft } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { verifyStoreCredentials } from '../../lib/store';
-import { signInToCounter } from '../../lib/supabase';
+import { activateCounterDevice, signInToCounter } from '../../lib/supabase';
 import type { Shop } from '../../types';
 
 interface ShopLoginScreenProps {
   shop: Shop;
-  privateFiles: boolean;
   onLoginSuccess: (authenticatedShop: Shop) => void;
   onBackToCustomer: () => void;
 }
 
 export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
   shop,
-  privateFiles,
   onLoginSuccess,
   onBackToCustomer,
 }) => {
-  const [loginId, setLoginId] = useState<string>(privateFiles ? '' : shop.loginId || shop.slug || '');
+  const [email, setEmail] = useState('');
   const [secretPin, setSecretPin] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [setupCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('setup'));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!loginId.trim() || !secretPin.trim()) {
-      setError(privateFiles ? 'Enter your counter email and password.' : 'Enter your store login and PIN.');
-      return;
-    }
-
-    if (privateFiles) {
-      setIsSigningIn(true);
-      try {
-        await signInToCounter(shop.id, loginId.trim(), secretPin);
-        onLoginSuccess(shop);
-      } catch (error) {
-        setError(error instanceof Error ? error.message : 'Could not sign in to the counter.');
-      } finally {
-        setIsSigningIn(false);
+    setIsSigningIn(true);
+    try {
+      if (setupCode) {
+        await activateCounterDevice(shop.id, setupCode);
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } else {
+        await signInToCounter(shop.id, email.trim(), secretPin);
       }
-      return;
-    }
-
-    const isValid = verifyStoreCredentials(shop.id, loginId.trim(), secretPin.trim());
-
-    if (isValid) {
-      try {
-        sessionStorage.setItem(`store_auth_${shop.id}`, 'true');
-      } catch {}
       onLoginSuccess(shop);
-    } else {
-      setError(`Invalid credentials for ${shop.name}. Check your PIN or contact platform owner Abhinav.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not access the counter.');
+    } finally {
+      setIsSigningIn(false);
     }
   };
 
@@ -85,15 +68,19 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {setupCode ? (
+            <p className="text-xs text-[#787671]">Activate this browser to open the queue and download files for {shop.name}.</p>
+          ) : <>
           <div>
             <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
-              {privateFiles ? 'Counter email' : 'Store Login ID'}
+              Counter email
             </label>
             <input
-              type={privateFiles ? 'email' : 'text'}
-              value={loginId}
-              onChange={(e) => setLoginId(e.target.value)}
-              placeholder={privateFiles ? 'counter@example.com' : shop.loginId || shop.slug}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="counter@example.com"
+              required
               autoComplete="username"
               className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono"
             />
@@ -102,7 +89,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-[#37352f]">
-                {privateFiles ? 'Password' : 'Store PIN or password'}
+                Password
               </label>
               <button
                 type="button"
@@ -118,12 +105,14 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
               type={showPassword ? 'text' : 'password'}
               value={secretPin}
               onChange={(e) => setSecretPin(e.target.value)}
-              placeholder={privateFiles ? 'Enter password' : 'Enter PIN'}
+              placeholder="Enter password"
               autoComplete="current-password"
+              required
               autoFocus
               className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono tracking-widest text-center text-sm"
             />
           </div>
+          </>}
 
           {error && (
             <div className="p-2.5 bg-[#fdf3f2] border border-[#f5c6cb] rounded-[8px] text-xs text-[#d44c47]">
@@ -137,7 +126,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
             disabled={isSigningIn}
             className="w-full py-2.5 text-xs font-semibold bg-[#0a1530] hover:bg-[#1a2a52]"
           >
-            {isSigningIn ? 'Signing in…' : 'Unlock Counter Dashboard'}
+            {isSigningIn ? 'Please wait…' : setupCode ? 'Activate this counter' : 'Unlock Counter Dashboard'}
           </Button>
 
           <button
@@ -146,7 +135,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
             className="w-full text-center text-xs text-[#787671] hover:text-[#1a1a1a] pt-1 flex items-center justify-center gap-1 cursor-pointer"
           >
             <ArrowLeft className="w-3 h-3" />
-            <span>Back to Student Print Ordering Kiosk</span>
+            <span>Back to customer print ordering</span>
           </button>
         </form>
 
