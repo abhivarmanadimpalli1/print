@@ -3,21 +3,23 @@ import { Store, Eye, EyeOff, Lock, ArrowLeft } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { verifyStoreCredentials } from '../../lib/store';
-import { signInToCounter, usesSupabase } from '../../lib/supabase';
+import { signInToCounter } from '../../lib/supabase';
 import type { Shop } from '../../types';
 
 interface ShopLoginScreenProps {
   shop: Shop;
+  privateFiles: boolean;
   onLoginSuccess: (authenticatedShop: Shop) => void;
   onBackToCustomer: () => void;
 }
 
 export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
   shop,
+  privateFiles,
   onLoginSuccess,
   onBackToCustomer,
 }) => {
-  const [loginId, setLoginId] = useState<string>(usesSupabase ? '' : shop.loginId || shop.slug || '');
+  const [loginId, setLoginId] = useState<string>(privateFiles ? '' : shop.loginId || shop.slug || '');
   const [secretPin, setSecretPin] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +30,11 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
     setError(null);
 
     if (!loginId.trim() || !secretPin.trim()) {
-      setError(usesSupabase ? 'Enter your counter email and password.' : 'Enter your store login and PIN.');
+      setError(privateFiles ? 'Enter your counter email and password.' : 'Enter your store login and PIN.');
       return;
     }
 
-    if (usesSupabase) {
+    if (privateFiles) {
       setIsSigningIn(true);
       try {
         await signInToCounter(shop.id, loginId.trim(), secretPin);
@@ -85,13 +87,13 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
-              {usesSupabase ? 'Counter email' : 'Store Login ID'}
+              {privateFiles ? 'Counter email' : 'Store Login ID'}
             </label>
             <input
-              type={usesSupabase ? 'email' : 'text'}
+              type={privateFiles ? 'email' : 'text'}
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
-              placeholder={usesSupabase ? 'counter@example.com' : shop.loginId || shop.slug}
+              placeholder={privateFiles ? 'counter@example.com' : shop.loginId || shop.slug}
               autoComplete="username"
               className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono"
             />
@@ -100,7 +102,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-[#37352f]">
-                {usesSupabase ? 'Password' : 'Store PIN or password'}
+                {privateFiles ? 'Password' : 'Store PIN or password'}
               </label>
               <button
                 type="button"
@@ -116,7 +118,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
               type={showPassword ? 'text' : 'password'}
               value={secretPin}
               onChange={(e) => setSecretPin(e.target.value)}
-              placeholder={usesSupabase ? 'Enter password' : 'Enter PIN'}
+              placeholder={privateFiles ? 'Enter password' : 'Enter PIN'}
               autoComplete="current-password"
               autoFocus
               className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono tracking-widest text-center text-sm"

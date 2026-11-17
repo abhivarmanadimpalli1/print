@@ -5,7 +5,6 @@ const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = projectUrl && publishableKey ? createClient(projectUrl, publishableKey) : null;
 const bucket = 'print-files';
 
-export const usesSupabase = Boolean(supabase);
 export const maxOrderFileSize = 50_000_000;
 
 function getClient() {
@@ -31,6 +30,14 @@ export function getUploadUserId(): Promise<string> {
     });
   }
   return startUploadSession;
+}
+
+export async function supportsPrivateUploads(shopId: string): Promise<boolean> {
+  if (!supabase) return false;
+  await getUploadUserId();
+  const { data, error } = await supabase.rpc('quickprint_shop_accepts_uploads', { target_shop: shopId });
+  if (error) throw error;
+  return data === true;
 }
 
 export async function canAccessCounter(shopId: string): Promise<boolean> {

@@ -93,7 +93,7 @@ work/
 
 ## 🔒 Document Privacy & Retention
 
-The app keeps original files in the private Supabase `print-files` bucket. The uploader and authorized staff for the order's shop can access the uploads. Firestore holds the order record and filenames.
+Shops with a Supabase counter account keep original files in the private `print-files` bucket. The uploader and authorized staff for the order's shop can access them. Firestore holds the order record and filenames. Shops awaiting setup use the existing single-file upload and counter login.
 
 ### Supabase setup
 

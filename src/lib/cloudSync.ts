@@ -10,6 +10,19 @@ export function getShopCloudTopic(shopId: string = 'campus-prints'): string {
   return `printqr-shop-${shopId}-sync-v1`;
 }
 
+export async function uploadLegacyFile(shopId: string, fileName: string, file: Blob): Promise<string> {
+  const topic = `printqr-files-${shopId}-v1`;
+  const response = await fetch(`${CLOUD_SYNC_BASE}/${topic}?filename=${encodeURIComponent(fileName)}`, {
+    method: 'PUT',
+    headers: { Filename: encodeURIComponent(fileName) },
+    body: file,
+  });
+  if (!response.ok) throw new Error('This file could not be sent to the counter. Try a smaller file.');
+  const result = await response.json();
+  if (!result.attachment?.url) throw new Error('The counter did not receive the file.');
+  return result.attachment.url;
+}
+
 export interface CloudPayload {
   action: 'CREATE_ORDER' | 'UPDATE_STATUS' | 'PURGE_ORDER' | 'TEST_PING';
   order?: Order;

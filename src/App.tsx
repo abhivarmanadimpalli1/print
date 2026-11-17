@@ -14,7 +14,7 @@ import {
   subscribeToStore,
 } from './lib/store';
 import type { Shop } from './types';
-import { canAccessCounter, signOutFromCounter, usesSupabase } from './lib/supabase';
+import { canAccessCounter, signOutFromCounter, supportsPrivateUploads } from './lib/supabase';
 
 function parseInitialRoute(): {
   shopSlug: string;
@@ -72,14 +72,10 @@ export function App() {
   const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(initialRoute.orderId);
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
 
-  const [isStoreAuthenticated, setIsStoreAuthenticated] = useState<boolean>(() => {
-    if (usesSupabase) return false;
-    try {
-      return sessionStorage.getItem(`store_auth_${initialRoute.shopSlug}`) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [isStoreAuthenticated, setIsStoreAuthenticated] = useState(false);
+  const [counterMode, setCounterMode] = useState<{ shopId: string; privateFiles: boolean } | null>(null);
+  const [counterError, setCounterError] = useState<string | null>(null);
+  const privateFiles = counterMode?.shopId === shop.id ? counterMode.privateFiles : undefined;
 
   // Update URL history to reflect clean role-based paths
   const updateBrowserUrl = useCallback((targetShop: Shop, view: 'customer' | 'shop' | 'settings' | 'admin') => {
@@ -99,20 +95,25 @@ export function App() {
 
   // Check store session whenever shop changes
   useEffect(() => {
-    if (usesSupabase) {
-      if (currentView !== 'shop' && currentView !== 'settings') return;
-      let active = true;
-      void canAccessCounter(shop.id).then(allowed => {
-        if (active) setIsStoreAuthenticated(allowed);
-      }).catch(() => {
-        if (active) setIsStoreAuthenticated(false);
-      });
-      return () => { active = false; };
+    if (currentView !== 'shop' && currentView !== 'settings') return;
+    let active = true;
+    async function checkCounter() {
+      const enabled = await supportsPrivateUploads(shop.id);
+      const authorized = enabled
+        ? await canAccessCounter(shop.id)
+        : sessionStorage.getItem(`store_auth_${shop.id}`) === 'true';
+      if (!active) return;
+      setCounterError(null);
+      setIsStoreAuthenticated(authorized);
+      setCounterMode({ shopId: shop.id, privateFiles: enabled });
     }
-    try {
-      const isAuthed = sessionStorage.getItem(`store_auth_${shop.id}`) === 'true';
-      setIsStoreAuthenticated(isAuthed);
-    } catch {}
+    void checkCounter().catch(() => {
+      if (!active) return;
+      setCounterMode(null);
+      setIsStoreAuthenticated(false);
+      setCounterError('Could not check counter access. Reload the page to try again.');
+    });
+    return () => { active = false; };
   }, [shop.id, currentView]);
 
   // Secret shortcut for shopkeeper: Alt + L toggles counter view on counter PC
@@ -146,7 +147,7 @@ export function App() {
   }, [shop.id]);
 
   const handleSelectShop = (newShop: Shop) => {
-    if (usesSupabase) setIsStoreAuthenticated(false);
+    setIsStoreAuthenticated(false);
     setShop(newShop);
     setActiveTrackingOrderId(null);
     setCurrentView('customer');
@@ -162,7 +163,7 @@ export function App() {
   };
 
   const handleStoreLogout = () => {
-    if (usesSupabase) void signOutFromCounter().catch(console.warn);
+    if (privateFiles) void signOutFromCounter().catch(console.warn);
     try {
       sessionStorage.removeItem(`store_auth_${shop.id}`);
     } catch {}
@@ -237,12 +238,17 @@ export function App() {
         )}
 
         {/* 2. SHOPKEEPER VIEW: Dedicated Counter Portal */}
-        {currentView === 'shop' && (
+        {(currentView === 'shop' || currentView === 'settings') && privateFiles === undefined && (
+          <p role="status" className="p-6 text-center">{counterError ?? 'Checking counter access…'}</p>
+        )}
+        {currentView === 'shop' && privateFiles !== undefined && (
           isStoreAuthenticated ? (
             <ShopDashboard shop={shop} />
           ) : (
             <ShopLoginScreen
+              key={shop.id}
               shop={shop}
+              privateFiles={privateFiles}
               onLoginSuccess={(authedShop) => {
                 setShop(authedShop);
                 setIsStoreAuthenticated(true);
@@ -257,12 +263,14 @@ export function App() {
         )}
 
         {/* 3. SHOP SETTINGS VIEW: (Protected) */}
-        {currentView === 'settings' && (
+        {currentView === 'settings' && privateFiles !== undefined && (
           isStoreAuthenticated ? (
             <ShopSettings shop={shop} onShopUpdated={(updated) => setShop(updated)} />
           ) : (
             <ShopLoginScreen
+              key={shop.id}
               shop={shop}
+              privateFiles={privateFiles}
               onLoginSuccess={(authedShop) => {
                 setShop(authedShop);
                 setIsStoreAuthenticated(true);
@@ -285,12 +293,7 @@ export function App() {
             }}
             onSelectShopToView={(selected) => {
               setShop(selected);
-              setIsStoreAuthenticated(!usesSupabase);
-              if (!usesSupabase) {
-                try {
-                  sessionStorage.setItem(`store_auth_${selected.id}`, 'true');
-                } catch {}
-              }
+              setIsStoreAuthenticated(false);
               setCurrentView('shop');
               updateBrowserUrl(selected, 'shop');
             }}
@@ -307,7 +310,7 @@ export function App() {
             <span>•</span>
             <span>Self-Service Instant Print Kiosk</span>
             <span>•</span>
-            <span>Private file uploads</span>
+            <span>Print orders</span>
           </div>
 
           {currentView !== 'customer' && (

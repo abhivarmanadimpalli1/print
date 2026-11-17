@@ -28,7 +28,8 @@ import { MagneticDropZone } from './MagneticDropZone';
 import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
-import { maxOrderFileSize, removeOrderAttachmentPaths } from '../../lib/supabase';
+import { maxOrderFileSize, removeOrderAttachmentPaths, supportsPrivateUploads } from '../../lib/supabase';
+import { uploadLegacyFile } from '../../lib/cloudSync';
 import { uploadOrderAttachments } from '../../lib/orderAttachments';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
@@ -287,12 +288,19 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     let uploaded: Awaited<ReturnType<typeof uploadOrderAttachments>> = [];
     let newOrder: Order;
     try {
+      const privateUploads = await supportsPrivateUploads(shop.id);
+      if (!privateUploads && docList.length > 1) {
+        throw new Error('This counter currently accepts one file per order. Submit each file separately.');
+      }
       const files = await Promise.all(docList.map(async (doc) => {
         if (!doc.rawFile && !doc.dataUrl) throw new Error('File content is unavailable.');
         const blob = doc.rawFile ?? await (await fetch(doc.dataUrl ?? '')).blob();
         return { name: doc.name, blob };
       }));
-      uploaded = await uploadOrderAttachments(shop.id, files);
+      if (privateUploads) uploaded = await uploadOrderAttachments(shop.id, files);
+      const fileDownloadUrl = privateUploads || !docList[0].rawFile
+        ? undefined
+        : await uploadLegacyFile(shop.id, files[0].name, files[0].blob);
       newOrder = await createOrder({
         shopId: shop.id,
         customerName: customerName.trim(),
@@ -300,7 +308,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         customerNotes: customerNotes.trim() || undefined,
         fileName: primaryFileName,
         fileSize: totalSize,
-        attachments: uploaded,
+        attachments: privateUploads ? uploaded : undefined,
+        fileDownloadUrl,
+        fileDataUrl: !privateUploads && !fileDownloadUrl ? docList[0].dataUrl : undefined,
         detectedPageCount: totalPagesInDoc,
         config,
         paymentMode: isOnlinePaid ? 'online' : 'counter',
@@ -1036,7 +1046,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
           <div className="p-3 bg-white border border-[#e5e3df] rounded-[10px] text-[11px] text-[#5d5b54] flex items-center gap-2">
             <Shield className="w-4 h-4 shrink-0 text-[#1aae39]" />
             <span>
-              The counter removes uploads 10 minutes after download or printing while staff are signed in.
+              Ask the counter about document retention before uploading sensitive files.
             </span>
           </div>
 

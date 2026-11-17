@@ -705,8 +705,13 @@ export async function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 
     updatedAt: now,
   };
 
-  if (!(await syncOrderToFirestore(newOrder))) {
-    throw new Error('The order could not be saved. Please try again.');
+  if (newOrder.attachments) {
+    if (!(await syncOrderToFirestore(newOrder))) {
+      throw new Error('The order could not be saved. Please try again.');
+    }
+  } else {
+    void syncOrderToFirestore(newOrder);
+    void broadcastToCloud(newOrder.shopId, { action: 'CREATE_ORDER', order: newOrder });
   }
   try {
     saveOrderToLocal(newOrder);
