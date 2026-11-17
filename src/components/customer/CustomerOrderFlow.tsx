@@ -125,8 +125,11 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     const uploaded = e.target.files?.[0];
     if (!uploaded) return;
 
-    if (!uploaded.name.toLowerCase().endsWith('.pdf') && uploaded.type !== 'application/pdf') {
-      setUploadError('Only PDF files are supported for instant in-shop printing.');
+    const isPdf = uploaded.name.toLowerCase().endsWith('.pdf') || uploaded.type === 'application/pdf';
+    const isImage = uploaded.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(uploaded.name);
+
+    if (!isPdf && !isImage) {
+      setUploadError('Please upload a PDF document or image (JPG, PNG, WebP).');
       return;
     }
 
@@ -142,14 +145,19 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     reader.onload = () => {
       const dataUrl = reader.result as string;
       let estimatedPages = 1;
-      try {
-        const matches = dataUrl.match(/\/Type\s*\/Page\b/g);
-        if (matches && matches.length > 0) {
-          estimatedPages = matches.length;
-        } else {
-          estimatedPages = Math.max(1, Math.min(60, Math.round(uploaded.size / 65000)));
+      if (isPdf) {
+        try {
+          const matches = dataUrl.match(/\/Type\s*\/Page\b/g);
+          if (matches && matches.length > 0) {
+            estimatedPages = matches.length;
+          } else {
+            estimatedPages = Math.max(1, Math.min(60, Math.round(uploaded.size / 65000)));
+          }
+        } catch {
+          estimatedPages = 1;
         }
-      } catch {
+      } else {
+        // Image printout is 1 sheet
         estimatedPages = 1;
       }
 
@@ -444,9 +452,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-[#0a1530] text-white text-[11px] flex items-center justify-center font-bold">1</span>
-                Upload Document (PDF)
+                Upload Document or Image
               </h2>
-              <span className="text-[11px] text-[#787671]">Max 50 MB</span>
+              <span className="text-[11px] text-[#787671]">PDF, JPG, PNG (Max 50 MB)</span>
             </div>
 
             {!file ? (
@@ -459,15 +467,15 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                     <UploadCloud className="w-6 h-6" />
                   </div>
                   <p className="text-sm font-semibold text-[#1a1a1a]">
-                    Click to browse or drop your PDF here
+                    Click to browse or drop your PDF or Image here
                   </p>
                   <p className="text-xs text-[#787671] mt-1">
-                    Fast client-side upload & instant page detection
+                    Supports PDFs, photos, certificates & study notes (JPG, PNG, WebP)
                   </p>
                   <input
                     id={fileInputId}
                     type="file"
-                    accept="application/pdf,.pdf"
+                    accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg,image/webp"
                     className="hidden"
                     onChange={handleFileUpload}
                   />
@@ -510,9 +518,13 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
             ) : (
               <div className="p-3.5 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-[6px] bg-[#0a1530] text-white flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5 text-[#f9e79f]" />
-                  </div>
+                  {file.dataUrl && file.dataUrl.startsWith('data:image/') ? (
+                    <img src={file.dataUrl} alt={file.name} className="w-10 h-10 object-cover rounded-[6px] border border-[#e5e3df] shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-[6px] bg-[#0a1530] text-white flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-[#f9e79f]" />
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-[#1a1a1a] truncate max-w-[280px]">
                       {file.name}
@@ -520,7 +532,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                     <div className="flex items-center gap-2 text-[11px] text-[#787671]">
                       <span>{(file.size / 1024).toFixed(0)} KB</span>
                       <span>•</span>
-                      <span className="font-semibold text-[#5645d4]">{file.detectedPages} pages detected</span>
+                      <span className="font-semibold text-[#5645d4]">
+                        {file.dataUrl && file.dataUrl.startsWith('data:image/') ? 'Image print sheet' : `${file.detectedPages} pages detected`}
+                      </span>
                     </div>
                   </div>
                 </div>

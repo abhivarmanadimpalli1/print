@@ -564,10 +564,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                 const shopOrders = getOrders(s.id);
                 const grossSales = shopOrders.reduce((sum, o) => sum + (o.config?.subtotal || 0), 0);
                 const uniqueCustomerUrl = `${origin}/s/${s.slug}`;
+                const shopCounterUrl = `${origin}/s/${s.slug}/counter`;
                 const isPasswordShown = revealedPasswords[s.id] || false;
 
                 const whatsappMessage = encodeURIComponent(
-                  `Hello ${s.ownerName || 'Sir'}! Welcome to Campus QuickPrint.\n\nHere are your store credentials:\n🏪 Store: ${s.name}\n🔗 Customer QR Link: ${uniqueCustomerUrl}\n🔐 Login ID: ${s.loginId || s.slug}\n🔑 Password/PIN: ${s.passwordHash || '1234'}\n\nKeep this URL open on your counter PC to receive customer print orders instantly!`
+                  `Hello ${s.ownerName || 'Sir'}! Welcome to Campus QuickPrint.\n\nHere are your store credentials:\n🏪 Store: ${s.name}\n\n💻 *Shopkeeper Counter Portal:* (Open on counter PC)\n🔗 ${shopCounterUrl}\n🔐 Login ID: ${s.loginId || s.slug}\n🔑 Password/PIN: ${s.passwordHash || '1234'}\n\n📲 *Customer QR Ordering Link:* (Display for students)\n🔗 ${uniqueCustomerUrl}\n\nStudents scan this to place print jobs directly to your counter!`
                 );
                 const whatsappUrl = `https://wa.me/${(s.ownerPhone || s.phone || '').replace(/[^0-9]/g, '')}?text=${whatsappMessage}`;
 
@@ -585,35 +586,63 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                       </div>
                     </td>
 
-                    {/* Customer URL */}
+                    {/* Customer QR & Shopkeeper Links */}
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#5645d4]">
-                        <span className="truncate max-w-[170px]" title={uniqueCustomerUrl}>
-                          /s/{s.slug}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(uniqueCustomerUrl, s.id)}
-                          className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
-                          title="Copy Full Customer URL"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <a
-                          href={`/s/${s.slug}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
-                          title="Open Customer Page in New Tab"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1 font-mono text-[11px] text-[#5645d4]">
+                          <span className="text-[10px] text-[#787671] font-sans font-semibold">QR:</span>
+                          <span className="truncate max-w-[130px]" title={uniqueCustomerUrl}>
+                            /s/{s.slug}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(uniqueCustomerUrl, `${s.id}_cust`)}
+                            className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
+                            title="Copy Student QR URL"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={`/s/${s.slug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:bg-[#e6e0f5] rounded cursor-pointer transition-colors"
+                            title="Open Student Kiosk"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+
+                        <div className="flex items-center gap-1 font-mono text-[11px] text-[#dd5b00]">
+                          <span className="text-[10px] text-[#787671] font-sans font-semibold">Portal:</span>
+                          <span className="truncate max-w-[130px]" title={shopCounterUrl}>
+                            /s/{s.slug}/counter
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(shopCounterUrl, `${s.id}_counter`)}
+                            className="p-1 hover:bg-[#ffe8d4] rounded cursor-pointer transition-colors"
+                            title="Copy Shopkeeper Counter URL"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={`/s/${s.slug}/counter`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:bg-[#ffe8d4] rounded cursor-pointer transition-colors"
+                            title="Open Counter Portal"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+
+                        {copiedSlug && copiedSlug.startsWith(s.id) && (
+                          <span className="text-[10px] text-[#137333] font-semibold block">
+                            ✓ Copied Link!
+                          </span>
+                        )}
                       </div>
-                      {copiedSlug === s.id && (
-                        <span className="text-[10px] text-[#137333] font-semibold block mt-0.5">
-                          ✓ Copied Link!
-                        </span>
-                      )}
                     </td>
 
                     {/* Credentials */}
