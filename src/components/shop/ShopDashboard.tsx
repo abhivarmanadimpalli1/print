@@ -516,6 +516,51 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 </div>
               )}
 
+              <section aria-label="Uploaded files" className="rounded-[8px] border border-[#e5e3df] bg-white">
+                <div className="flex items-center justify-between gap-2 px-3 py-2">
+                  <h4 className="text-xs font-semibold text-[#37352f]">
+                    Uploaded files ({attachments.length})
+                  </h4>
+                  {!selectedOrder.isPurged && availableAttachments.length > 1 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleDownloadFiles(selectedOrder, availableAttachments)}
+                      icon={<Download className="w-3.5 h-3.5" />}
+                      disabled={Boolean(downloadingOrderId)}
+                    >
+                      {isDownloading ? 'Downloading…' : 'Download All'}
+                    </Button>
+                  )}
+                </div>
+                <ul aria-label="Order files" className="divide-y divide-[#e5e3df] border-t border-[#e5e3df]">
+                  {attachments.map((file, index) => (
+                    <li key={file.storagePath ?? index} className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
+                      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[#1a1a1a]">
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-[#787671]" aria-hidden="true" />
+                        <span className="min-w-0 break-all">{file.name}</span>
+                      </span>
+                      {!selectedOrder.isPurged && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={Boolean(downloadingOrderId) || (!file.storagePath && !file.legacyUrl)}
+                          onClick={() => void handleDownloadFiles(selectedOrder, [file])}
+                          aria-label={`Download ${file.name}`}
+                          icon={<Download className="w-3.5 h-3.5" />}
+                        >
+                          Download
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {!selectedOrder.attachments && / \(\+\d+ more docs\)$/.test(selectedOrder.fileName) && (
+                  <p className="px-3 pb-2 text-xs text-[#787671]">This older order is missing files. Ask the customer to resend the full set.</p>
+                )}
+              </section>
+
               {/* Document Specs Matrix */}
               <div className="space-y-2 text-xs">
                 <span className="font-bold uppercase tracking-wider text-[#787671] text-[10px] block">
@@ -523,28 +568,6 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 </span>
 
                 <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5">
-                  <ul aria-label="Order files" className="space-y-1">
-                    {attachments.map((file, index) => (
-                      <li key={file.storagePath ?? index} className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-[#1a1a1a] break-all">{file.name}</span>
-                        {!selectedOrder.isPurged && attachments.length > 1 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={Boolean(downloadingOrderId) || (!file.storagePath && !file.legacyUrl)}
-                            onClick={() => void handleDownloadFiles(selectedOrder, [file])}
-                            aria-label={`Download ${file.name}`}
-                            icon={<Download className="w-3.5 h-3.5" />}
-                          >
-                            Download
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  {!selectedOrder.attachments && / \(\+\d+ more docs\)$/.test(selectedOrder.fileName) && (
-                    <p className="text-[#787671]">This older order is missing files. Ask the customer to resend the full set.</p>
-                  )}
                   <div className="flex justify-between">
                     <span className="text-[#787671]">Selected Range:</span>
                     <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.customPageRange} ({selectedOrder.config.selectedPageCount} pgs)</span>
@@ -589,8 +612,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
               {/* Core Workflow Actions */}
               <div className="space-y-2 pt-2 border-t border-[#e5e3df]">
                 
-                {/* Print & Download Primary Actions */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="flex">
                   <Button
                     variant="primary"
                     size="md"
@@ -601,22 +623,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     {selectedOrder.isPurged ? 'PDF Purged' : 'Print via Browser'}
                   </Button>
 
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    onClick={() => void handleDownloadFiles(selectedOrder, availableAttachments)}
-                    icon={<Download className="w-4 h-4" />}
-                    disabled={selectedOrder.isPurged || Boolean(downloadingOrderId) || !availableAttachments.length}
-                  >
-                    {selectedOrder.isPurged ? 'Purged (Clean)' : isDownloading ? 'Downloading…' : attachments.length > 1 ? `Download all ${attachments.length} files` : 'Download file'}
-                  </Button>
                 </div>
 
-                {availableAttachments.length > 1 && !selectedOrder.isPurged && (
-                  <p className="text-[11px] text-[#787671] pt-1">
-                    Allow multiple downloads if prompted. You can also download any file individually.
-                  </p>
-                )}
                 {selectedOrder.isPurged && (
                   <p className="text-[11px] text-[#787671] text-center pt-1">
                     The order files are unavailable. The receipt is still available.
