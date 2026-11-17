@@ -49,7 +49,7 @@ function parseInitialRoute(): {
   return {
     shopSlug: shopSlug || 'campus-prints',
     view,
-    orderId: params.get('orderId'),
+    orderId: params.get('orderId') || params.get('order') || params.get('track'),
     openLogin,
   };
 }
@@ -219,7 +219,17 @@ export function App() {
                 {activeTrackingOrderId ? (
                   <CustomerOrderStatus
                     orderId={activeTrackingOrderId}
-                    onBackToOrder={() => setActiveTrackingOrderId(null)}
+                    shop={shop}
+                    onBackToOrder={() => {
+                      setActiveTrackingOrderId(null);
+                      updateBrowserUrl(shop, 'customer');
+                    }}
+                    onSelectOrder={(selectedId) => {
+                      setActiveTrackingOrderId(selectedId);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', `/s/${shop.slug}?orderId=${selectedId}`);
+                      }
+                    }}
                   />
                 ) : (
                   <CustomerOrderFlow
@@ -227,9 +237,15 @@ export function App() {
                     isMobileFree={isMobileFree}
                     onOrderSubmitted={(order) => {
                       setActiveTrackingOrderId(order.id);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', `/s/${shop.slug}?orderId=${order.id}`);
+                      }
                     }}
                     onViewStatus={(orderId) => {
                       setActiveTrackingOrderId(orderId);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', `/s/${shop.slug}?orderId=${orderId}`);
+                      }
                     }}
                   />
                 )}

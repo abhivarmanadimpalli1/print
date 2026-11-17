@@ -18,6 +18,7 @@ import { Badge } from '../ui/Badge';
 import { RejectOrderModal } from './RejectOrderModal';
 import { ClarifyOrderModal } from './ClarifyOrderModal';
 import { PrintHandoffModal } from './PrintHandoffModal';
+import { DigitalCounterBill } from '../customer/DigitalCounterBill';
 import {
   getOrders,
   updateOrderStatus,
@@ -99,6 +100,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   const [orderToReject, setOrderToReject] = useState<Order | null>(null);
   const [orderToClarify, setOrderToClarify] = useState<Order | null>(null);
   const [orderToPrint, setOrderToPrint] = useState<Order | null>(null);
+  const [orderToViewBill, setOrderToViewBill] = useState<Order | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // Subscribe to cross-tab updates
   useEffect(() => {
@@ -136,7 +144,21 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   });
 
   const handleStatusChange = (orderId: string, status: OrderStatus, note?: string) => {
-    updateOrderStatus(orderId, status, note);
+    const updated = updateOrderStatus(orderId, status, note);
+    const refreshed = getOrders(shop.id);
+    setOrders(refreshed);
+    const target = refreshed.find(o => o.id === orderId) || updated;
+    const num = target ? `#${target.orderNumber}` : orderId;
+    const statusLabels: Record<OrderStatus, string> = {
+      new: 'New in Queue',
+      review: 'Under Review',
+      approved: 'Approved for Printing',
+      printing: 'Printing at Counter',
+      ready: 'Ready for Pickup',
+      completed: 'Completed',
+      cancelled: 'Cancelled / Rejected',
+    };
+    showToast(`Order ${num} updated: ${statusLabels[status] || status}`);
   };
 
   const handleDownloadPdf = async (order: Order) => {
@@ -566,7 +588,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
                 {/* Status progression triggers */}
                 <div className="grid grid-cols-2 gap-2 pt-1">
-                  {selectedOrder.status === 'new' && (
+                  {['new', 'review'].includes(selectedOrder.status) && (
                     <Button
                       variant="dark"
                       size="sm"
@@ -575,6 +597,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     >
                       Approve Job
                     </Button>
+                  )}
+
+                  {selectedOrder.status === 'approved' && (
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#1aae39] bg-[#d9f3e1] px-3 py-1.5 rounded-[6px]">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>✓ Job Approved</span>
+                    </div>
                   )}
 
                   {['new', 'review', 'approved'].includes(selectedOrder.status) && (
@@ -608,6 +637,17 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                       Mark Completed
                     </Button>
                   )}
+
+                  {/* View Customer Bill */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="text-xs text-[#5645d4]"
+                    onClick={() => setOrderToViewBill(selectedOrder)}
+                    icon={<FileText className="w-3.5 h-3.5 text-[#5645d4]" />}
+                  >
+                    View Bill (#INV-{selectedOrder.orderNumber})
+                  </Button>
 
                   {/* Clarify button */}
                   <Button
@@ -694,9 +734,42 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
           onClose={() => setOrderToPrint(null)}
           onConfirmPrint={() => {
             markOrderPrinted(orderToPrint.id);
+            const refreshed = getOrders(shop.id);
+            setOrders(refreshed);
             setOrderToPrint(null);
+            showToast(`🖨️ Order #${orderToPrint.orderNumber} sent to printer! 10m auto-purge active.`);
           }}
         />
+      )}
+
+      {/* Official Counter Bill Modal for Shopkeeper */}
+      {orderToViewBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-[16px] max-w-xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-[#e5e3df]">
+              <h3 className="font-bold text-sm text-[#0a1530]">Official Digital Counter Receipt</h3>
+              <button
+                type="button"
+                onClick={() => setOrderToViewBill(null)}
+                className="text-[#787671] hover:text-[#1a1a1a] text-xs font-semibold p-1.5 cursor-pointer hover:bg-[#f0eeec] rounded"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <DigitalCounterBill
+              order={orderToViewBill}
+              shop={shop}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Floating Status Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 bg-[#0a1530] text-white px-4 py-2.5 rounded-[10px] shadow-2xl border border-white/20 text-xs font-semibold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#1aae39]" />
+          <span>{toastMessage}</span>
+        </div>
       )}
 
     </div>

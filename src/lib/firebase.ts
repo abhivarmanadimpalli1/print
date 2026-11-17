@@ -5,6 +5,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   where,
@@ -243,16 +244,47 @@ export function listenToAllCityOrdersFromFirestore(
 }
 
 /**
- * Fetches a single order by ID from Firestore (Solves "Order Not Found" across devices)
+ * Fetches a single order by ID or Order Number from Firestore (Solves "Order Not Found" across devices)
  */
-export async function getOrderFromFirestore(orderId: string): Promise<Order | null> {
+export async function getOrderFromFirestore(orderIdOrNumber: string | number): Promise<Order | null> {
   const db = getDb();
   if (!db) return null;
 
+  const raw = String(orderIdOrNumber).trim();
+  const cleanId = raw.replace(/^#/, '');
+  const numericOnly = cleanId.replace(/^ORD-/i, '');
+  const standardOrdId = `ORD-${numericOnly}`;
+
   try {
-    const orderDoc = await getDoc(doc(db, 'orders', orderId));
+    // 1. Direct doc lookup by cleanId
+    let orderDoc = await getDoc(doc(db, 'orders', cleanId));
     if (orderDoc.exists()) {
       return orderDoc.data() as Order;
+    }
+
+    // 2. Direct doc lookup by standard ORD-XXX format
+    if (cleanId !== standardOrdId) {
+      orderDoc = await getDoc(doc(db, 'orders', standardOrdId));
+      if (orderDoc.exists()) {
+        return orderDoc.data() as Order;
+      }
+    }
+
+    // 3. Query collection where orderNumber == numeric value
+    const num = parseInt(numericOnly, 10);
+    if (!isNaN(num)) {
+      const q = query(collection(db, 'orders'), where('orderNumber', '==', num));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs[0].data() as Order;
+      }
+    }
+
+    // 4. Query collection where id matches standard format
+    const qUpper = query(collection(db, 'orders'), where('id', '==', standardOrdId));
+    const snapUpper = await getDocs(qUpper);
+    if (!snapUpper.empty) {
+      return snapUpper.docs[0].data() as Order;
     }
   } catch (err) {
     console.warn('[Firebase] Error fetching order:', err);

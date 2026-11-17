@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Layers,
   Zap,
+  Search,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Button } from '../ui/Button';
@@ -68,6 +69,19 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   // Payment Modal & Confirmation
   const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
   const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null);
+
+  // Quick Order Tracking by Number (#1046)
+  const [quickTrackInput, setQuickTrackInput] = useState<string>('');
+  const recentOrderId = typeof window !== 'undefined' ? localStorage.getItem('recent_order_id') : null;
+  const recentOrderNum = typeof window !== 'undefined' ? localStorage.getItem('recent_order_num') : null;
+
+  const handleQuickTrack = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const q = quickTrackInput.trim();
+    if (q) {
+      onViewStatus(q);
+    }
+  };
 
   // Calculation Logic
   const totalPagesInDoc = file?.detectedPages || 1;
@@ -207,6 +221,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
     // 2. Instant celebration and immediate screen transition! Zero waiting!
     try {
+      localStorage.setItem('recent_order_id', newOrder.id);
+      localStorage.setItem('recent_order_num', String(newOrder.orderNumber));
       confetti({
         particleCount: 70,
         spread: 60,
@@ -218,6 +234,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
     setSubmittedOrder(newOrder);
     onOrderSubmitted(newOrder);
+    onViewStatus(newOrder.id);
 
     // 3. Background stream of document binary if needed - never blocks the customer
     if (rawFile) {
@@ -334,6 +351,55 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
           Free Student Pilot
         </span>
       </div>
+
+      {/* Quick Order Tracking Banner (Find Order by #1046) */}
+      <div className="bg-[#f0edfa] border border-[#5645d4]/20 rounded-[12px] p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-2.5 text-xs text-[#0a1530]">
+          <div className="w-8 h-8 rounded-full bg-[#5645d4] text-white flex items-center justify-center shrink-0">
+            <Search className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-bold block text-sm">Already Placed a Print Order?</span>
+            <span className="text-[#5d5b54] text-[11px]">Enter your order number to check live queue status & view your official bill.</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleQuickTrack} className="flex items-center gap-1.5 w-full sm:w-auto">
+          <input
+            type="text"
+            placeholder="e.g. 1046"
+            value={quickTrackInput}
+            onChange={(e) => setQuickTrackInput(e.target.value)}
+            className="px-3 py-1.5 text-xs bg-white border border-[#c8c4be] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#5645d4] font-mono w-full sm:w-28 text-center font-bold"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={!quickTrackInput.trim()}
+            className="text-xs shrink-0 bg-[#5645d4] whitespace-nowrap"
+          >
+            Track & Bill
+          </Button>
+        </form>
+      </div>
+
+      {/* Resume Previous Order if placed recently in this browser */}
+      {recentOrderId && (
+        <div className="bg-[#d9f3e1]/70 border border-[#1aae39]/30 rounded-[10px] p-2.5 flex items-center justify-between text-xs text-[#1aae39]">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Active print order in progress: <strong className="font-mono font-bold">#{recentOrderNum || recentOrderId}</strong></span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onViewStatus(recentOrderId)}
+            className="font-bold underline text-xs cursor-pointer hover:opacity-80 shrink-0 text-[#169431]"
+          >
+            View Bill & Status →
+          </button>
+        </div>
+      )}
 
       {/* Main Grid: Responsive 2-Columns on Desktop (Mobile-Free), 1-Column on Mobile */}
       <div className={isMobileFree ? "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" : "space-y-6"}>

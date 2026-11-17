@@ -9,6 +9,7 @@ import {
 import {
   syncOrderToFirestore,
   syncShopToFirestore,
+  listenToAllCityOrdersFromFirestore,
 } from './firebase';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
@@ -466,19 +467,6 @@ export function verifyStoreCredentials(shopIdOrSlug: string, loginId: string, se
   return matchId && matchSecret;
 }
 
-export function getAllOrders(): Order[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY);
-    if (!raw) {
-      localStorage.setItem(ORDERS_KEY, JSON.stringify(INITIAL_ORDERS));
-      return INITIAL_ORDERS;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_ORDERS;
-  }
-}
-
 export function getCityPlatformMetrics(): {
   totalShops: number;
   activeSubscriptions: number;
@@ -508,28 +496,63 @@ export function getCityPlatformMetrics(): {
   };
 }
 
-export function getOrders(shopId: string = 'campus-prints'): Order[] {
+export function getAllOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_KEY);
     if (!raw) {
       localStorage.setItem(ORDERS_KEY, JSON.stringify(INITIAL_ORDERS));
       return INITIAL_ORDERS;
     }
-    const orders: Order[] = JSON.parse(raw);
-    return orders.filter(o => !shopId || o.shopId === shopId);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : INITIAL_ORDERS;
   } catch (err) {
     console.error('Failed reading orders from localStorage', err);
     return INITIAL_ORDERS;
   }
 }
 
-export function getOrder(orderId: string): Order | undefined {
-  const orders = getOrders();
-  return orders.find(o => o.id === orderId);
+export function getOrders(shopId?: string): Order[] {
+  const all = getAllOrders();
+  if (!shopId) return all;
+  return all.filter(o => o.shopId === shopId);
+}
+
+export function getOrder(orderIdOrNumber: string | number): Order | undefined {
+  const all = getAllOrders();
+  const cleanId = String(orderIdOrNumber).trim().replace(/^#/, '').toUpperCase();
+  const numericOnly = Number(cleanId.replace(/^ORD-/, ''));
+  return all.find(o => 
+    (o.id && o.id.toUpperCase() === cleanId) || 
+    (o.orderNumber && `ORD-${o.orderNumber}`.toUpperCase() === cleanId) ||
+    String(o.orderNumber) === cleanId ||
+    (!isNaN(numericOnly) && o.orderNumber === numericOnly)
+  );
+}
+
+export function saveOrderToLocal(order: Order): void {
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, order.id);
+  if (index >= 0) {
+    orders[index] = { ...orders[index], ...order };
+  } else {
+    orders.unshift(order);
+  }
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  notifyLocalUpdate();
+}
+
+function findOrderIndex(orders: Order[], orderIdOrNumber: string | number): number {
+  const cleanId = String(orderIdOrNumber).trim().replace(/^#/, '').toUpperCase();
+  const numericOnly = Number(cleanId.replace(/^ORD-/, ''));
+  return orders.findIndex(o => 
+    (o.id && o.id.toUpperCase() === cleanId) || 
+    (o.orderNumber && `ORD-${o.orderNumber}`.toUpperCase() === cleanId) ||
+    (!isNaN(numericOnly) && o.orderNumber === numericOnly)
+  );
 }
 
 export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'status' | 'statusHistory'>): Order {
-  const orders = getOrders();
+  const orders = getAllOrders();
   const maxNumber = orders.reduce((max, o) => Math.max(max, o.orderNumber || 1000), 1040);
   const nextNumber = maxNumber + 1;
   const nextId = `ORD-${nextNumber}`;
@@ -562,8 +585,8 @@ export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'creat
 }
 
 export function updateOrderStatus(orderId: string, status: OrderStatus, note?: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -595,7 +618,7 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
   // Broadcast status to the customer's phone over the internet
   broadcastToCloud(existing.shopId, {
     action: 'UPDATE_STATUS',
-    orderId,
+    orderId: existing.id,
     status,
     note,
     purgeAt,
@@ -605,8 +628,8 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
 }
 
 export function updateOrderFileUrl(orderId: string, url: string): void {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index !== -1) {
     orders[index].fileDownloadUrl = url;
     localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
@@ -616,8 +639,8 @@ export function updateOrderFileUrl(orderId: string, url: string): void {
 }
 
 export function markOrderDownloaded(orderId: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -640,10 +663,11 @@ export function markOrderDownloaded(orderId: string): Order | undefined {
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   notifyLocalUpdate();
+  syncOrderToFirestore(updated).catch(() => {});
 
   broadcastToCloud(existing.shopId, {
     action: 'UPDATE_STATUS',
-    orderId,
+    orderId: existing.id,
     status: existing.status,
     purgeAt,
   });
@@ -652,8 +676,8 @@ export function markOrderDownloaded(orderId: string): Order | undefined {
 }
 
 export function markOrderPrinted(orderId: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -677,10 +701,11 @@ export function markOrderPrinted(orderId: string): Order | undefined {
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   notifyLocalUpdate();
+  syncOrderToFirestore(updated).catch(() => {});
 
   broadcastToCloud(existing.shopId, {
     action: 'UPDATE_STATUS',
-    orderId,
+    orderId: existing.id,
     status: 'printing',
     purgeAt,
   });
@@ -689,8 +714,8 @@ export function markOrderPrinted(orderId: string): Order | undefined {
 }
 
 export function purgeOrderDocument(orderId: string, reason: string = '10-minute retention policy'): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -712,17 +737,18 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   notifyLocalUpdate();
+  syncOrderToFirestore(updated).catch(() => {});
 
   broadcastToCloud(existing.shopId, {
     action: 'PURGE_ORDER',
-    orderId,
+    orderId: existing.id,
   });
 
   return updated;
 }
 
 export function checkAndPurgeExpiredDocuments(): number {
-  const orders = getOrders();
+  const orders = getAllOrders();
   const now = Date.now();
   let purgedCount = 0;
 
@@ -761,8 +787,8 @@ if (typeof window !== 'undefined') {
 }
 
 export function rejectOrder(orderId: string, reason: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -796,8 +822,8 @@ export function rejectOrder(orderId: string, reason: string): Order | undefined 
 }
 
 export function requestClarification(orderId: string, note: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -828,8 +854,8 @@ export function requestClarification(orderId: string, note: string): Order | und
 }
 
 export function reviseOrderQuote(orderId: string, newTotal: number, reason: string): Order | undefined {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === orderId);
+  const orders = getAllOrders();
+  const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
 
   const now = new Date().toISOString();
@@ -865,11 +891,11 @@ export function resetDemoData(): void {
  * Merges an order received from a smartphone over the cloud
  */
 function handleIncomingCloudMessage(payload: CloudPayload) {
-  const orders = getOrders();
+  const orders = getAllOrders();
 
   if (payload.action === 'CREATE_ORDER' && payload.order) {
     const incoming = payload.order;
-    const exists = orders.some(o => o.id === incoming.id);
+    const exists = orders.some(o => o.id === incoming.id || o.orderNumber === incoming.orderNumber);
     if (!exists) {
       // Only fallback to minimal placeholder if neither real cloud file nor local file is present:
       if (!incoming.fileDataUrl && !incoming.fileDownloadUrl && !incoming.isPurged) {
@@ -881,7 +907,7 @@ function handleIncomingCloudMessage(payload: CloudPayload) {
       notifyLocalUpdate();
     }
   } else if (payload.action === 'UPDATE_STATUS' && payload.orderId && payload.status) {
-    const index = orders.findIndex(o => o.id === payload.orderId);
+    const index = orders.findIndex(o => o.id === payload.orderId || (payload.orderId && o.orderNumber === Number(payload.orderId.replace(/^ORD-/, ''))));
     if (index !== -1) {
       const existing = orders[index];
       const now = new Date().toISOString();
@@ -913,17 +939,53 @@ function handleIncomingCloudMessage(payload: CloudPayload) {
   }
 }
 
-// Initialize Internet-wide Cloud Sync
+// Initialize Internet-wide Cloud & Firestore Sync
 if (typeof window !== 'undefined') {
-  const currentShopId = 'campus-prints';
+  // 1. Real-time Firestore listener across all bookstores in city
+  try {
+    listenToAllCityOrdersFromFirestore((firestoreOrders) => {
+      if (firestoreOrders && firestoreOrders.length > 0) {
+        const local = getAllOrders();
+        const localMap = new Map(local.map(o => [o.id, o]));
+        let hasChange = false;
 
-  // 1. Listen live via Server-Sent Events (SSE)
-  listenToCloud(currentShopId, (payload) => {
+        firestoreOrders.forEach(fo => {
+          const existing = localMap.get(fo.id);
+          if (!existing) {
+            localMap.set(fo.id, fo);
+            hasChange = true;
+          } else if (new Date(fo.updatedAt || fo.createdAt).getTime() > new Date(existing.updatedAt || existing.createdAt).getTime()) {
+            localMap.set(fo.id, { ...existing, ...fo });
+            hasChange = true;
+          }
+        });
+
+        if (hasChange) {
+          const merged = Array.from(localMap.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          localStorage.setItem(ORDERS_KEY, JSON.stringify(merged));
+          playChime();
+          notifyLocalUpdate();
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[Firestore Live Sync] Note:', err);
+  }
+
+  // 2. Resolve current store from URL (e.g. /s/sri-krishna-xerox)
+  const path = window.location.pathname;
+  const match = path.match(/^\/(?:s|shop)\/([a-zA-Z0-9_-]+)/);
+  const activeShopId = match ? match[1] : (new URLSearchParams(window.location.search).get('shop') || 'campus-prints');
+
+  // 3. Listen live via Server-Sent Events for this bookstore
+  listenToCloud(activeShopId, (payload) => {
     handleIncomingCloudMessage(payload);
   });
 
-  // 2. Poll recent orders submitted in the last 12 hours from phones
-  fetchRecentCloudOrders(currentShopId).then(history => {
+  // 4. Poll recent cloud orders for this bookstore
+  fetchRecentCloudOrders(activeShopId).then(history => {
     history.forEach(item => {
       handleIncomingCloudMessage(item);
     });

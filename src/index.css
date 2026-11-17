@@ -92,3 +92,28 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-stone);
 }
+
+/* Crisp Clean Counter Receipt Print Media */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt, #printable-receipt * {
+    visibility: visible;
+  }
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 16px;
+    background: white !important;
+    color: black !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
