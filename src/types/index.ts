@@ -81,6 +81,12 @@ export interface StatusHistoryEntry {
   note?: string;
 }
 
+export interface OrderAttachment {
+  name: string;
+  size: number;
+  storagePath?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: number;
@@ -92,6 +98,7 @@ export interface Order {
   fileSize: number;
   fileDataUrl?: string;      // local base64 data URL
   fileDownloadUrl?: string;  // cloud URL to the REAL uploaded PDF file
+  attachments?: OrderAttachment[];
   detectedPageCount: number;
   config: PrintJobConfig;
   paymentMode: PaymentChoice;

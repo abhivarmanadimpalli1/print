@@ -1,20 +1,13 @@
 import type { Order, OrderStatus } from '../types';
 
 /**
- * Cloud Sync & File Transfer Engine for Real In-Shop QR Print Operations
- * ---------------------------------------------------------------------
- * Transmits real uploaded customer PDF binaries and order events across
- * cellular/WiFi devices (phone -> desktop on Vercel) in real-time.
+ * Broadcasts legacy order events between devices.
  */
 
 const CLOUD_SYNC_BASE = 'https://ntfy.sh';
 
 export function getShopCloudTopic(shopId: string = 'campus-prints'): string {
   return `printqr-shop-${shopId}-sync-v1`;
-}
-
-export function getShopFilesTopic(shopId: string = 'campus-prints'): string {
-  return `printqr-files-${shopId}-v1`;
 }
 
 export interface CloudPayload {
@@ -35,39 +28,6 @@ const CURRENT_DEVICE_ID = typeof window !== 'undefined'
       return id;
     })())
   : 'server';
-
-/**
- * Uploads the actual customer PDF binary to the cloud storage bucket so the shopkeeper
- * downloads the real, unmodified document with all pages and fonts.
- */
-export async function uploadPdfToCloud(shopId: string, fileBlob: Blob | File, fileName: string): Promise<string | null> {
-  const topic = getShopFilesTopic(shopId);
-  try {
-    // Sanitize headers to standard ASCII to prevent browser ByteString encoding errors
-    const safeAsciiName = fileName.replace(/[^\x20-\x7E]/g, '_');
-    const res = await fetch(`${CLOUD_SYNC_BASE}/${topic}?filename=${encodeURIComponent(fileName)}`, {
-      method: 'PUT',
-      headers: {
-        'Title': 'Customer PDF Order',
-        'Filename': encodeURIComponent(safeAsciiName),
-      },
-      body: fileBlob,
-    });
-
-    if (!res.ok) {
-      console.warn('[CloudSync] File upload returned status:', res.status);
-      return null;
-    }
-
-    const data = await res.json();
-    if (data.attachment && data.attachment.url) {
-      return data.attachment.url;
-    }
-  } catch (err) {
-    console.warn('[CloudSync] Real PDF file upload failed:', err);
-  }
-  return null;
-}
 
 /**
  * Broadcasts an order or status update to all connected devices over the internet.

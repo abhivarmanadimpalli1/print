@@ -19,7 +19,7 @@ A mobile-first QR code print ordering system for local copy shops, print centers
 
 ### ⏱️ 10-Minute Database Auto-Purge Privacy Lifecycle
 - **Zero Database Bloat:** When a document is downloaded or printed at the counter, a **10-minute auto-purge countdown** begins.
-- **Permanent Binary Wipe:** Exactly 10 minutes post-download/print, the PDF file binary is permanently purged from storage.
+- **File cleanup:** The signed-in counter removes expired uploads from Supabase Storage after the 10-minute countdown. If the counter is closed, cleanup resumes when staff open it again.
 - **Audit Accounting Preserved:** The financial receipt, queue ID, customer name, and transaction amount remain intact for store accounts.
 - **Instant Override:** Shopkeeper can click **"Purge Now"** at any time to immediately delete the file.
 
@@ -93,4 +93,19 @@ work/
 
 ## 🔒 Document Privacy & Retention
 
-Uploaded customer files are strictly isolated to temporary operational queues. Files are automatically deleted from memory and storage 10 minutes following counter download or printing.
+The app keeps original files in the private Supabase `print-files` bucket. The uploader and authorized staff for the order's shop can access the uploads. Firestore holds the order record and filenames.
+
+### Supabase setup
+
+1. Run [the storage migration](supabase/migrations/20261117000000_print_files.sql) in the project's SQL Editor.
+2. Under **Authentication → Sign In / Providers**, enable **Anonymous sign-ins** so customers can upload without creating an account.
+3. Under **Authentication → Users**, add the counter's confirmed email-and-password user. Copy the user's UID.
+4. In SQL Editor, grant the user access to the counter. Replace the example UUID with that UID and use the shop ID from the customer's store URL.
+
+   ```sql
+   insert into public.quickprint_shop_staff (shop_id, user_id)
+   values ('campus-prints', '00000000-0000-0000-0000-000000000000')
+   on conflict do nothing;
+   ```
+
+5. Deploy with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` set to the project values. The app uses the publishable key and Supabase Auth. Staff sign in to the counter with their email and password.

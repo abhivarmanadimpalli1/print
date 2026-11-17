@@ -26,9 +26,10 @@ import { Badge } from '../ui/Badge';
 import { PaymentModal } from './PaymentModal';
 import { MagneticDropZone } from './MagneticDropZone';
 import { parsePageRange } from '../../lib/pageRangeParser';
-import { createOrder, updateOrderFileUrl } from '../../lib/store';
+import { createOrder } from '../../lib/store';
 import { generateMinimalPdf } from '../../lib/samplePdf';
-import { uploadPdfToCloud } from '../../lib/cloudSync';
+import { maxOrderFileSize, removeOrderAttachmentPaths } from '../../lib/supabase';
+import { uploadOrderAttachments } from '../../lib/orderAttachments';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
 
 interface CustomerOrderFlowProps {
@@ -59,7 +60,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
   // Multi-File Upload State
   const [docList, setDocList] = useState<UploadedDocItem[]>([]);
-  const [rawFiles, setRawFiles] = useState<File[]>([]);
+  const [isPreparingFiles, setIsPreparingFiles] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Configuration State
@@ -80,6 +81,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   // Payment Modal & Confirmation
   const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
   const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   // Quick Order Tracking by Number (#1046)
   const [quickTrackInput, setQuickTrackInput] = useState<string>('');
@@ -100,7 +103,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   const primaryFileName = docList.length === 1
     ? docList[0].name
     : docList.length > 1
-    ? `${docList[0].name} (+${docList.length - 1} more docs)`
+    ? `${docList.length} files`
     : '';
 
   const parsedRange = pageRangeType === 'all'
@@ -138,12 +141,17 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       isImage: false,
     };
     setDocList([presetItem]);
-    setRawFiles([]);
     setCustomRange(`1-${pages}`);
   };
 
   // Process incoming files from Magnetic DropZone or file input
   const processFiles = async (incomingFiles: File[]): Promise<UploadedDocItem[]> => {
+    const oversized = incomingFiles.find(file => file.size > maxOrderFileSize);
+    if (oversized) {
+      setUploadError(`${oversized.name} exceeds the 50 MB limit.`);
+      return [];
+    }
+    setUploadError(null);
     const items: UploadedDocItem[] = [];
 
     for (const f of incomingFiles) {
@@ -174,7 +182,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       }
 
       items.push({
-        id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        id: crypto.randomUUID(),
         name: f.name,
         size: f.size,
         detectedPages,
@@ -190,46 +198,48 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   const handleDropZoneFilesChange = async (filesFromZone: File[]) => {
     if (filesFromZone.length === 0) {
       setDocList([]);
-      setRawFiles([]);
       return;
     }
-    const processed = await processFiles(filesFromZone);
-    setDocList(processed);
-    setRawFiles(filesFromZone);
-    const sumPgs = processed.reduce((sum, d) => sum + d.detectedPages, 0);
-    setCustomRange(`1-${sumPgs || 1}`);
+    setIsPreparingFiles(true);
+    try {
+      const processed = await processFiles(filesFromZone);
+      setDocList(processed);
+      const sumPgs = processed.reduce((sum, d) => sum + d.detectedPages, 0);
+      setCustomRange(`1-${sumPgs || 1}`);
+    } finally {
+      setIsPreparingFiles(false);
+    }
   };
 
   const handleAddMoreFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const moreFiles = Array.from(e.target.files || []);
     if (moreFiles.length === 0) return;
-    const processed = await processFiles(moreFiles);
-    setDocList(prev => {
-      const next = [...prev, ...processed];
-      const sumPgs = next.reduce((sum, d) => sum + d.detectedPages, 0);
-      setCustomRange(`1-${sumPgs || 1}`);
-      return next;
-    });
-    setRawFiles(prev => [...prev, ...moreFiles]);
     e.target.value = '';
+    setIsPreparingFiles(true);
+    try {
+      const processed = await processFiles(moreFiles);
+      setDocList(prev => {
+        const next = [...prev, ...processed];
+        const sumPgs = next.reduce((sum, d) => sum + d.detectedPages, 0);
+        setCustomRange(`1-${sumPgs || 1}`);
+        return next;
+      });
+    } finally {
+      setIsPreparingFiles(false);
+    }
   };
 
   const handleRemoveDoc = (id: string) => {
-    const target = docList.find(d => d.id === id);
     setDocList(prev => {
       const next = prev.filter(d => d.id !== id);
       const sumPgs = next.reduce((sum, d) => sum + d.detectedPages, 0);
       setCustomRange(`1-${sumPgs || 1}`);
       return next;
     });
-    if (target) {
-      setRawFiles(prev => prev.filter(f => f.name !== target.name));
-    }
   };
 
   const handleClearAllDocs = () => {
     setDocList([]);
-    setRawFiles([]);
     setCustomRange('');
   };
 
@@ -256,8 +266,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmitOrder = (isOnlinePaid: boolean = false) => {
-    if (!validateForm() || docList.length === 0) return;
+  const handleSubmitOrder = async (isOnlinePaid = false) => {
+    if (isSubmitting || isPreparingFiles || !validateForm()) return;
 
     const config: PrintJobConfig = {
       copies,
@@ -272,23 +282,38 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       subtotal: estimatedSubtotal,
     };
 
-    // 1. Instantly create the order in local & Firestore database (< 300ms)
-    const newOrder = createOrder({
-      shopId: shop.id,
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim(),
-      customerNotes: customerNotes.trim() || undefined,
-      fileName: primaryFileName || docList[0]?.name || 'Document.pdf',
-      fileSize: totalSize,
-      fileDataUrl: docList[0]?.dataUrl,
-      fileDownloadUrl: undefined,
-      detectedPageCount: totalPagesInDoc,
-      config,
-      paymentMode: paymentChoice,
-      paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
-    });
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    let uploaded: Awaited<ReturnType<typeof uploadOrderAttachments>> = [];
+    let newOrder: Order;
+    try {
+      const files = await Promise.all(docList.map(async (doc) => {
+        if (!doc.rawFile && !doc.dataUrl) throw new Error('File content is unavailable.');
+        const blob = doc.rawFile ?? await (await fetch(doc.dataUrl ?? '')).blob();
+        return { name: doc.name, blob };
+      }));
+      uploaded = await uploadOrderAttachments(shop.id, files);
+      newOrder = await createOrder({
+        shopId: shop.id,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerNotes: customerNotes.trim() || undefined,
+        fileName: primaryFileName,
+        fileSize: totalSize,
+        attachments: uploaded,
+        detectedPageCount: totalPagesInDoc,
+        config,
+        paymentMode: isOnlinePaid ? 'online' : 'counter',
+        paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
+      });
+    } catch (error) {
+      void removeOrderAttachmentPaths(uploaded.map(file => file.storagePath)).catch(console.warn);
+      setSubmissionError(error instanceof Error ? error.message : 'Could not submit the order. Please try again.');
+      return;
+    } finally {
+      setIsSubmitting(false);
+    }
 
-    // 2. Instant celebration and immediate screen transition! Zero waiting!
     try {
       localStorage.setItem('recent_order_id', newOrder.id);
       localStorage.setItem('recent_order_num', String(newOrder.orderNumber));
@@ -305,20 +330,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     onOrderSubmitted(newOrder);
     onViewStatus(newOrder.id);
 
-    // 3. Background stream of document binary if needed - never blocks the customer
-    const firstRaw = docList[0]?.rawFile || rawFiles[0];
-    if (firstRaw) {
-      (async () => {
-        try {
-          const uploadedUrl = await uploadPdfToCloud(shop.id, firstRaw, firstRaw.name);
-          if (uploadedUrl) {
-            updateOrderFileUrl(newOrder.id, uploadedUrl);
-          }
-        } catch (err) {
-          console.warn('[Background Document Transfer] Info:', err);
-        }
-      })();
-    }
   };
 
   // If order was just submitted, display confirmation screen
@@ -373,7 +384,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
           {/* Retention notice */}
           <div className="p-3 bg-[#f8f5e8] border border-[#e5e3df] rounded-[8px] text-[11px] text-[#523410] flex items-center gap-2 mb-6 text-left">
             <Shield className="w-4 h-4 shrink-0 text-[#dd5b00]" />
-            <span>Document file is automatically and permanently purged from the database 10 minutes after counter download/printing.</span>
+            <span>The counter removes files after the 10-minute retention period.</span>
           </div>
 
           <div className="space-y-2.5">
@@ -391,7 +402,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               onClick={() => {
                 setSubmittedOrder(null);
                 setDocList([]);
-                setRawFiles([]);
               }}
             >
               Print Another Document
@@ -523,9 +533,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
             {docList.length === 0 ? (
               <div className="space-y-4">
                 <MagneticDropZone
-                  accept="image/*,.pdf,.zip"
+                  accept="image/*,.pdf"
+                  maxSize={maxOrderFileSize}
                   multiple={true}
-                  files={rawFiles}
                   onFilesChange={handleDropZoneFilesChange}
                 />
 
@@ -627,6 +637,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                   <button
                     type="button"
                     onClick={() => addMoreInputRef.current?.click()}
+                    disabled={isPreparingFiles || isSubmitting}
                     className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5645d4] bg-[#f0edfa] hover:bg-[#e6e0f5] px-3 py-1.5 rounded-[8px] transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1001,7 +1012,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <Button
                 variant="primary"
                 className="w-full text-base font-semibold py-3 shadow-md"
-                disabled={!shop.isOpen}
+                disabled={!shop.isOpen || isSubmitting || isPreparingFiles}
                 onClick={() => {
                   if (validateForm()) {
                     if (paymentChoice === 'online') {
@@ -1013,10 +1024,11 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 }}
                 icon={<ChevronRight className="w-5 h-5" />}
               >
-                {paymentChoice === 'online'
+                {isSubmitting ? 'Uploading files…' : isPreparingFiles ? 'Preparing files…' : paymentChoice === 'online'
                   ? `Proceed to Payment (₹${estimatedSubtotal.toFixed(2)})`
                   : `Submit Print Order (₹${estimatedSubtotal.toFixed(2)})`}
               </Button>
+              {submissionError && <p role="alert" className="mt-2 text-xs text-red-700">{submissionError}</p>}
             </div>
           </Card>
 
@@ -1024,7 +1036,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
           <div className="p-3 bg-white border border-[#e5e3df] rounded-[10px] text-[11px] text-[#5d5b54] flex items-center gap-2">
             <Shield className="w-4 h-4 shrink-0 text-[#1aae39]" />
             <span>
-              <strong>10-Minute Database Privacy:</strong> Document is permanently deleted 10 minutes post-download to clear storage and protect your privacy.
+              The counter removes uploads 10 minutes after download or printing while staff are signed in.
             </span>
           </div>
 

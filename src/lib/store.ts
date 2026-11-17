@@ -11,6 +11,7 @@ import {
   syncShopToFirestore,
   listenToAllCityOrdersFromFirestore,
 } from './firebase';
+import { hasVerifiedCounter, removeOrderAttachmentPaths } from './supabase';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
@@ -688,16 +689,15 @@ function findOrderIndex(orders: Order[], orderIdOrNumber: string | number): numb
   );
 }
 
-export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'status' | 'statusHistory'>): Order {
+export async function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'status' | 'statusHistory'>): Promise<Order> {
   const orders = getAllOrders();
   const maxNumber = orders.reduce((max, o) => Math.max(max, o.orderNumber || 1000), 1045);
   const nextNumber = maxNumber + 1;
-  const nextId = `ORD-${nextNumber}`;
   const now = new Date().toISOString();
 
   const newOrder: Order = {
     ...orderData,
-    id: nextId,
+    id: crypto.randomUUID(),
     orderNumber: nextNumber,
     status: 'new',
     statusHistory: [{ status: 'new', timestamp: now }],
@@ -705,19 +705,14 @@ export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'creat
     updatedAt: now,
   };
 
-  const updatedOrders = [newOrder, ...orders];
-  localStorage.setItem(ORDERS_KEY, JSON.stringify(updatedOrders));
-  notifyLocalUpdate();
-
-  // Sync to Firestore cloud database
-  syncOrderToFirestore(newOrder).catch(() => {});
-
-  // Broadcast to all phones and computers across the internet
-  broadcastToCloud(newOrder.shopId, {
-    action: 'CREATE_ORDER',
-    order: newOrder,
-  });
-
+  if (!(await syncOrderToFirestore(newOrder))) {
+    throw new Error('The order could not be saved. Please try again.');
+  }
+  try {
+    saveOrderToLocal(newOrder);
+  } catch (error) {
+    console.warn('Order saved in Firestore, but could not be cached on this device:', error);
+  }
   return newOrder;
 }
 
@@ -764,15 +759,18 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
   return updated;
 }
 
-export function updateOrderFileUrl(orderId: string, url: string): void {
-  const orders = getAllOrders();
-  const index = findOrderIndex(orders, orderId);
-  if (index !== -1) {
-    orders[index].fileDownloadUrl = url;
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-    notifyLocalUpdate();
-    syncOrderToFirestore(orders[index]).catch(() => {});
-  }
+function clearOrderFiles(order: Order) {
+  return {
+    fileDataUrl: undefined,
+    fileDownloadUrl: undefined,
+    attachments: order.attachments?.map(({ name, size }) => ({ name, size })),
+  };
+}
+
+function deleteOrderFiles(order: Order) {
+  return removeOrderAttachmentPaths(order.attachments?.flatMap(
+    file => file.storagePath ? [file.storagePath] : []
+  ) ?? []);
 }
 
 export function markOrderDownloaded(orderId: string): Order | undefined {
@@ -850,7 +848,9 @@ export function markOrderPrinted(orderId: string): Order | undefined {
   return updated;
 }
 
-export function purgeOrderDocument(orderId: string, reason: string = '10-minute retention policy'): Order | undefined {
+export async function purgeOrderDocument(orderId: string, reason: string = '10-minute retention policy'): Promise<Order | undefined> {
+  const order = getOrder(orderId);
+  if (!order || order.isPurged || !(await deleteOrderFiles(order))) return undefined;
   const orders = getAllOrders();
   const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
@@ -860,8 +860,7 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
 
   const updated: Order = {
     ...existing,
-    fileDataUrl: undefined,
-    fileDownloadUrl: undefined,
+    ...clearOrderFiles(existing),
     isPurged: true,
     purgedAt: now,
     updatedAt: now,
@@ -884,6 +883,8 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
   return updated;
 }
 
+const ongoingPurges = new Set<string>();
+
 export function checkAndPurgeExpiredDocuments(): number {
   const orders = getAllOrders();
   const now = Date.now();
@@ -891,11 +892,17 @@ export function checkAndPurgeExpiredDocuments(): number {
 
   const updated = orders.map(order => {
     if (!order.isPurged && order.purgeAt && now >= new Date(order.purgeAt).getTime()) {
+      if (order.attachments) {
+        if (hasVerifiedCounter(order.shopId) && !ongoingPurges.has(order.id)) {
+          ongoingPurges.add(order.id);
+          void purgeOrderDocument(order.id).catch(console.warn).finally(() => ongoingPurges.delete(order.id));
+        }
+        return order;
+      }
       purgedCount++;
-      return {
+      const expiredOrder: Order = {
         ...order,
-        fileDataUrl: undefined,
-        fileDownloadUrl: undefined,
+        ...clearOrderFiles(order),
         isPurged: true,
         purgedAt: new Date(now).toISOString(),
         updatedAt: new Date(now).toISOString(),
@@ -904,6 +911,7 @@ export function checkAndPurgeExpiredDocuments(): number {
           { status: order.status, timestamp: new Date(now).toISOString(), note: '10-minute auto-delete expired: PDF purged from database.' },
         ],
       };
+      return expiredOrder;
     }
     return order;
   });
@@ -923,7 +931,9 @@ if (typeof window !== 'undefined') {
   }, 3000);
 }
 
-export function rejectOrder(orderId: string, reason: string): Order | undefined {
+export async function rejectOrder(orderId: string, reason: string): Promise<Order | undefined> {
+  const order = getOrder(orderId);
+  if (!order || !(await deleteOrderFiles(order))) return undefined;
   const orders = getAllOrders();
   const index = findOrderIndex(orders, orderId);
   if (index === -1) return undefined;
@@ -934,7 +944,7 @@ export function rejectOrder(orderId: string, reason: string): Order | undefined 
     ...existing,
     status: 'cancelled',
     rejectionReason: reason,
-    fileDataUrl: undefined,
+    ...clearOrderFiles(existing),
     isPurged: true,
     purgedAt: now,
     updatedAt: now,
@@ -948,6 +958,7 @@ export function rejectOrder(orderId: string, reason: string): Order | undefined 
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   notifyLocalUpdate();
 
+  if (existing.attachments) void syncOrderToFirestore(updated);
   broadcastToCloud(existing.shopId, {
     action: 'UPDATE_STATUS',
     orderId,
@@ -1034,10 +1045,6 @@ function handleIncomingCloudMessage(payload: CloudPayload) {
     const incoming = payload.order;
     const exists = orders.some(o => o.id === incoming.id || o.orderNumber === incoming.orderNumber);
     if (!exists) {
-      // Only fallback to minimal placeholder if neither real cloud file nor local file is present:
-      if (!incoming.fileDataUrl && !incoming.fileDownloadUrl && !incoming.isPurged) {
-        incoming.fileDataUrl = generateMinimalPdf(incoming.fileName, incoming.detectedPageCount);
-      }
       const updated = [incoming, ...orders];
       localStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
       playChime();
@@ -1067,6 +1074,8 @@ function handleIncomingCloudMessage(payload: CloudPayload) {
       orders[index] = {
         ...orders[index],
         fileDataUrl: undefined,
+        fileDownloadUrl: undefined,
+        attachments: orders[index].attachments?.map(({ name, size }) => ({ name, size })),
         isPurged: true,
         purgedAt: new Date().toISOString(),
       };

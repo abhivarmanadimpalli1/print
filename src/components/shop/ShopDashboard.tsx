@@ -33,6 +33,7 @@ import {
 } from '../../lib/store';
 import { listenToStoreOrdersFromFirestore } from '../../lib/firebase';
 import { listenToCloud } from '../../lib/cloudSync';
+import { getOrderAttachments, saveAttachment, type DownloadableAttachment } from '../../lib/orderAttachments';
 import type { Order, OrderStatus, Shop } from '../../types';
 
 interface ShopDashboardProps {
@@ -105,6 +106,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   const [orderToPrint, setOrderToPrint] = useState<Order | null>(null);
   const [orderToViewBill, setOrderToViewBill] = useState<Order | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [downloadingOrderId, setDownloadingOrderId] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -149,6 +151,9 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   }, [orders, selectedOrderId]);
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId) || orders[0];
+  const attachments = selectedOrder ? getOrderAttachments(selectedOrder) : [];
+  const availableAttachments = attachments.filter(file => file.storagePath || file.legacyUrl);
+  const isDownloading = downloadingOrderId === selectedOrder?.id;
 
   // Filtering
   const filteredOrders = orders.filter(order => {
@@ -160,7 +165,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = order.customerName.toLowerCase().includes(q);
-      const matchFile = order.fileName.toLowerCase().includes(q);
+      const matchFile = order.fileName.toLowerCase().includes(q) ||
+        getOrderAttachments(order).some(file => file.name.toLowerCase().includes(q));
       const matchNum = order.orderNumber.toString().includes(q);
       const matchPhone = order.customerPhone.includes(q);
       if (!matchName && !matchFile && !matchNum && !matchPhone) return false;
@@ -187,48 +193,30 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     showToast(`Order ${num} updated: ${statusLabels[status] || status}`);
   };
 
-  const handleDownloadPdf = async (order: Order) => {
-    if (order.isPurged || (!order.fileDownloadUrl && !order.fileDataUrl)) {
-      alert('This document was already permanently purged after 10 minutes to protect customer privacy and keep the database clear.');
-      return;
-    }
-    // Arm the 10-minute auto-purge timer
-    markOrderDownloaded(order.id);
-
-    // If the document was uploaded to the cloud, download the real original PDF
-    if (order.fileDownloadUrl) {
-      try {
-        const res = await fetch(order.fileDownloadUrl);
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = order.fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        return;
-      } catch (err) {
-        console.warn('Direct blob fetch failed, falling back to window open:', err);
-        window.open(order.fileDownloadUrl, '_blank');
-        return;
+  const handleDownloadFiles = async (order: Order, files: DownloadableAttachment[]) => {
+    if (order.isPurged || downloadingOrderId || !files.length) return;
+    setDownloadingOrderId(order.id);
+    try {
+      const results = await Promise.allSettled(files.map(saveAttachment));
+      const failures = files.filter((_, index) => results[index].status === 'rejected');
+      if (failures.length) {
+        showToast(`Could not download ${failures.map(file => file.name).join(', ')}. Retry from the file list.`);
+      } else {
+        markOrderDownloaded(order.id);
       }
-    }
-
-    if (order.fileDataUrl) {
-      const link = document.createElement('a');
-      link.href = order.fileDataUrl;
-      link.download = order.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    } finally {
+      setDownloadingOrderId(null);
     }
   };
 
-  const handleManualPurge = (orderId: string) => {
-    if (window.confirm('Permanently delete this PDF from the database right now? Customer audit receipt will remain.')) {
-      purgeOrderDocument(orderId, 'Manual shopkeeper clean');
+  const handleManualPurge = async (orderId: string) => {
+    if (!window.confirm('Delete the order files now? The receipt will remain.')) return;
+    try {
+      if (!(await purgeOrderDocument(orderId, 'Manual shopkeeper clean'))) {
+        showToast('Could not delete the order files. Please try again.');
+      }
+    } catch {
+      showToast('Could not delete the order files. Please try again.');
     }
   };
 
@@ -494,7 +482,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                       {selectedOrder.isPurged
                         ? 'Document binary safely deleted to clear storage.'
                         : selectedOrder.purgeAt
-                        ? 'Permanently deletes 10 minutes post-download/print.'
+                        ? 'The signed-in counter removes files after the 10-minute countdown.'
                         : 'Triggered automatically when downloaded or printed.'}
                     </span>
                   </div>
@@ -535,10 +523,28 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 </span>
 
                 <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-[#787671]">File Name:</span>
-                    <span className="font-medium text-[#1a1a1a] truncate max-w-[190px]">{selectedOrder.fileName}</span>
-                  </div>
+                  <ul aria-label="Order files" className="space-y-1">
+                    {attachments.map((file, index) => (
+                      <li key={file.storagePath ?? index} className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-[#1a1a1a] break-all">{file.name}</span>
+                        {!selectedOrder.isPurged && attachments.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={Boolean(downloadingOrderId) || (!file.storagePath && !file.legacyUrl)}
+                            onClick={() => void handleDownloadFiles(selectedOrder, [file])}
+                            aria-label={`Download ${file.name}`}
+                            icon={<Download className="w-3.5 h-3.5" />}
+                          >
+                            Download
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {!selectedOrder.attachments && / \(\+\d+ more docs\)$/.test(selectedOrder.fileName) && (
+                    <p className="text-[#787671]">This older order is missing files. Ask the customer to resend the full set.</p>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-[#787671]">Selected Range:</span>
                     <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.customPageRange} ({selectedOrder.config.selectedPageCount} pgs)</span>
@@ -590,7 +596,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     size="md"
                     onClick={() => setOrderToPrint(selectedOrder)}
                     icon={<Printer className="w-4 h-4" />}
-                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged}
+                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged || availableAttachments.length !== 1}
                   >
                     {selectedOrder.isPurged ? 'PDF Purged' : 'Print via Browser'}
                   </Button>
@@ -598,17 +604,22 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   <Button
                     variant="secondary"
                     size="md"
-                    onClick={() => handleDownloadPdf(selectedOrder)}
+                    onClick={() => void handleDownloadFiles(selectedOrder, availableAttachments)}
                     icon={<Download className="w-4 h-4" />}
-                    disabled={selectedOrder.isPurged}
+                    disabled={selectedOrder.isPurged || Boolean(downloadingOrderId) || !availableAttachments.length}
                   >
-                    {selectedOrder.isPurged ? 'Purged (Clean)' : 'Download PDF'}
+                    {selectedOrder.isPurged ? 'Purged (Clean)' : isDownloading ? 'Downloading…' : attachments.length > 1 ? `Download all ${attachments.length} files` : 'Download file'}
                   </Button>
                 </div>
 
+                {availableAttachments.length > 1 && !selectedOrder.isPurged && (
+                  <p className="text-[11px] text-[#787671] pt-1">
+                    Allow multiple downloads if prompted. You can also download any file individually.
+                  </p>
+                )}
                 {selectedOrder.isPurged && (
                   <p className="text-[11px] text-[#787671] text-center pt-1">
-                    🔒 The PDF binary was permanently purged 10 minutes post-download to protect user privacy and clear database storage.
+                    The order files are unavailable. The receipt is still available.
                   </p>
                 )}
 
@@ -730,9 +741,16 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
         <RejectOrderModal
           orderNumber={orderToReject.orderNumber}
           onClose={() => setOrderToReject(null)}
-          onConfirm={(reason) => {
-            rejectOrder(orderToReject.id, reason);
-            setOrderToReject(null);
+          onConfirm={async (reason) => {
+            try {
+              if (await rejectOrder(orderToReject.id, reason)) {
+                setOrderToReject(null);
+                return;
+              }
+            } catch (error) {
+              console.warn('Could not reject order:', error);
+            }
+            showToast('Could not reject the order. Please try again.');
           }}
         />
       )}

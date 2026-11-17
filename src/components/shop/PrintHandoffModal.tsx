@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Printer, AlertCircle, Cpu, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { Order } from '../../types';
+import { getAttachmentBlob, getOrderAttachments } from '../../lib/orderAttachments';
 
 interface PrintHandoffModalProps {
   order: Order;
@@ -14,24 +15,42 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
   onConfirmPrint,
   onClose,
 }) => {
-  const triggerBrowserPrint = () => {
-    const printTarget = order.fileDownloadUrl || order.fileDataUrl;
-    if (printTarget) {
-      const printWindow = window.open(printTarget, '_blank');
-      if (printWindow) {
-        printWindow.focus();
-        setTimeout(() => {
-          try {
-            printWindow.print();
-          } catch {
-            // popup blocked or browser security
-          }
-        }, 800);
-      }
-    } else {
-      window.print();
+  const [error, setError] = useState<string | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
+  const attachment = getOrderAttachments(order)[0];
+
+  const triggerBrowserPrint = async () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setError('Allow pop-ups for this site to open the print file.');
+      return;
     }
-    onConfirmPrint();
+    setIsOpening(true);
+    setError(null);
+    try {
+      const blob = await getAttachmentBlob(attachment);
+      if (!/^(application\/pdf|image\/(jpeg|png|webp|bmp))$/.test(blob.type)) {
+        throw new Error('The file cannot be previewed safely in the browser.');
+      }
+      const url = URL.createObjectURL(blob);
+      printWindow.location.href = url;
+      printWindow.focus();
+      setTimeout(() => {
+        try {
+          printWindow.print();
+        } catch {
+          // The browser may require opening the print dialog manually.
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }, 1000);
+      onConfirmPrint();
+    } catch {
+      printWindow.close();
+      setError('Could not open the original file. Try downloading it from the order.');
+    } finally {
+      setIsOpening(false);
+    }
   };
 
   return (
@@ -55,7 +74,7 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
           <div className="p-3.5 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5 text-xs">
             <div className="flex justify-between">
               <span className="text-[#787671]">File:</span>
-              <span className="font-semibold text-[#1a1a1a] truncate max-w-[240px]">{order.fileName}</span>
+              <span className="font-semibold text-[#1a1a1a] truncate max-w-[240px]">{attachment.name}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#787671]">Target Setup:</span>
@@ -93,6 +112,7 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
           </div>
 
           {/* Actions */}
+          {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e5e3df]">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
@@ -100,7 +120,8 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
             <Button
               variant="primary"
               size="sm"
-              onClick={triggerBrowserPrint}
+              onClick={() => void triggerBrowserPrint()}
+              disabled={isOpening}
               icon={<Printer className="w-4 h-4" />}
             >
               Launch Browser Print Dialog & Set "Printing"

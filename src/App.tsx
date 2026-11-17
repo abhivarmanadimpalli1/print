@@ -14,6 +14,7 @@ import {
   subscribeToStore,
 } from './lib/store';
 import type { Shop } from './types';
+import { canAccessCounter, signOutFromCounter, usesSupabase } from './lib/supabase';
 
 function parseInitialRoute(): {
   shopSlug: string;
@@ -72,6 +73,7 @@ export function App() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
 
   const [isStoreAuthenticated, setIsStoreAuthenticated] = useState<boolean>(() => {
+    if (usesSupabase) return false;
     try {
       return sessionStorage.getItem(`store_auth_${initialRoute.shopSlug}`) === 'true';
     } catch {
@@ -97,11 +99,21 @@ export function App() {
 
   // Check store session whenever shop changes
   useEffect(() => {
+    if (usesSupabase) {
+      if (currentView !== 'shop' && currentView !== 'settings') return;
+      let active = true;
+      void canAccessCounter(shop.id).then(allowed => {
+        if (active) setIsStoreAuthenticated(allowed);
+      }).catch(() => {
+        if (active) setIsStoreAuthenticated(false);
+      });
+      return () => { active = false; };
+    }
     try {
       const isAuthed = sessionStorage.getItem(`store_auth_${shop.id}`) === 'true';
       setIsStoreAuthenticated(isAuthed);
     } catch {}
-  }, [shop.id]);
+  }, [shop.id, currentView]);
 
   // Secret shortcut for shopkeeper: Alt + L toggles counter view on counter PC
   useEffect(() => {
@@ -134,6 +146,7 @@ export function App() {
   }, [shop.id]);
 
   const handleSelectShop = (newShop: Shop) => {
+    if (usesSupabase) setIsStoreAuthenticated(false);
     setShop(newShop);
     setActiveTrackingOrderId(null);
     setCurrentView('customer');
@@ -149,6 +162,7 @@ export function App() {
   };
 
   const handleStoreLogout = () => {
+    if (usesSupabase) void signOutFromCounter().catch(console.warn);
     try {
       sessionStorage.removeItem(`store_auth_${shop.id}`);
     } catch {}
@@ -271,10 +285,12 @@ export function App() {
             }}
             onSelectShopToView={(selected) => {
               setShop(selected);
-              setIsStoreAuthenticated(true);
-              try {
-                sessionStorage.setItem(`store_auth_${selected.id}`, 'true');
-              } catch {}
+              setIsStoreAuthenticated(!usesSupabase);
+              if (!usesSupabase) {
+                try {
+                  sessionStorage.setItem(`store_auth_${selected.id}`, 'true');
+                } catch {}
+              }
               setCurrentView('shop');
               updateBrowserUrl(selected, 'shop');
             }}
@@ -291,7 +307,7 @@ export function App() {
             <span>•</span>
             <span>Self-Service Instant Print Kiosk</span>
             <span>•</span>
-            <span>10-Minute Privacy Guarantee</span>
+            <span>Private file uploads</span>
           </div>
 
           {currentView !== 'customer' && (

@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   setDoc,
+  deleteField,
   getDoc,
   getDocs,
   onSnapshot,
@@ -149,7 +150,12 @@ export async function syncOrderToFirestore(order: Order): Promise<boolean> {
       ...order,
       fileDataUrl: isSmallEnoughForFirestore ? order.fileDataUrl : undefined,
     };
-    await setDoc(orderRef, safeOrder, { merge: true });
+    const data = JSON.parse(JSON.stringify(safeOrder));
+    if (order.isPurged) {
+      data.fileDataUrl = deleteField();
+      data.fileDownloadUrl = deleteField();
+    }
+    await setDoc(orderRef, data, { merge: true });
     return true;
   } catch (err) {
     console.warn('[Firebase] Failed to sync order to Firestore:', err);
