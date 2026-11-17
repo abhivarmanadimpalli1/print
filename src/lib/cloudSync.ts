@@ -43,11 +43,13 @@ const CURRENT_DEVICE_ID = typeof window !== 'undefined'
 export async function uploadPdfToCloud(shopId: string, fileBlob: Blob | File, fileName: string): Promise<string | null> {
   const topic = getShopFilesTopic(shopId);
   try {
+    // Sanitize headers to standard ASCII to prevent browser ByteString encoding errors
+    const safeAsciiName = fileName.replace(/[^\x20-\x7E]/g, '_');
     const res = await fetch(`${CLOUD_SYNC_BASE}/${topic}?filename=${encodeURIComponent(fileName)}`, {
       method: 'PUT',
       headers: {
-        'Title': `Customer PDF: ${fileName}`,
-        'Filename': fileName,
+        'Title': 'Customer PDF Order',
+        'Filename': encodeURIComponent(safeAsciiName),
       },
       body: fileBlob,
     });
