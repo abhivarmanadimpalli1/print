@@ -1,5 +1,11 @@
 import type { Shop, Order, OrderStatus } from '../types';
 import { generateMinimalPdf } from './samplePdf';
+import {
+  broadcastToCloud,
+  listenToCloud,
+  fetchRecentCloudOrders,
+  type CloudPayload,
+} from './cloudSync';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
@@ -127,7 +133,7 @@ const INITIAL_ORDERS: Order[] = [
       { status: 'printing', timestamp: new Date(Date.now() - 5 * 60000).toISOString() },
     ],
     printedAt: new Date(Date.now() - 3 * 60000).toISOString(),
-    purgeAt: new Date(Date.now() + 7 * 60000).toISOString(), // 7 minutes left on 10m timer
+    purgeAt: new Date(Date.now() + 7 * 60000).toISOString(),
     createdAt: new Date(Date.now() - 25 * 60000).toISOString(),
     updatedAt: new Date(Date.now() - 5 * 60000).toISOString(),
   },
@@ -163,7 +169,7 @@ const INITIAL_ORDERS: Order[] = [
       { status: 'ready', timestamp: new Date(Date.now() - 10 * 60000).toISOString() },
     ],
     downloadedAt: new Date(Date.now() - 8 * 60000).toISOString(),
-    purgeAt: new Date(Date.now() + 2 * 60000).toISOString(), // 2 minutes left
+    purgeAt: new Date(Date.now() + 2 * 60000).toISOString(),
     createdAt: new Date(Date.now() - 40 * 60000).toISOString(),
     updatedAt: new Date(Date.now() - 10 * 60000).toISOString(),
   },
@@ -175,7 +181,6 @@ const INITIAL_ORDERS: Order[] = [
     customerPhone: '+91 98556 78901',
     fileName: 'Identity_Card_Scan_Passport_Size.pdf',
     fileSize: 620000,
-    // Document was already purged post-10 minutes to clear database:
     fileDataUrl: undefined,
     isPurged: true,
     purgedAt: new Date(Date.now() - 50 * 60000).toISOString(),
@@ -206,19 +211,42 @@ const INITIAL_ORDERS: Order[] = [
   },
 ];
 
+// Audio chime for new incoming orders from phone
+function playChime() {
+  try {
+    if (typeof window === 'undefined') return;
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.12); // A5
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch {
+    // audio context muted or user hasn't interacted
+  }
+}
+
+// Local device broadcast channel
 let broadcastChannel: BroadcastChannel | null = null;
 try {
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     broadcastChannel = new BroadcastChannel(SYNC_CHANNEL);
   }
-} catch {
-  // fallback
-}
+} catch {}
 
-function notifySync() {
+const listeners = new Set<() => void>();
+
+function notifyLocalUpdate() {
   if (broadcastChannel) {
     broadcastChannel.postMessage({ type: 'STORE_UPDATED', timestamp: Date.now() });
   }
+  listeners.forEach(fn => fn());
 }
 
 export function getShop(shopId: string = 'campus-prints'): Shop {
@@ -240,7 +268,7 @@ export function saveShop(shop: Shop): void {
     const shops: Record<string, Shop> = raw ? JSON.parse(raw) : {};
     shops[shop.id] = shop;
     localStorage.setItem(SHOPS_KEY, JSON.stringify(shops));
-    notifySync();
+    notifyLocalUpdate();
   } catch (err) {
     console.error('Failed saving shop to localStorage', err);
   }
@@ -285,7 +313,14 @@ export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'creat
 
   const updatedOrders = [newOrder, ...orders];
   localStorage.setItem(ORDERS_KEY, JSON.stringify(updatedOrders));
-  notifySync();
+  notifyLocalUpdate();
+
+  // Broadcast to all phones and computers across the internet
+  broadcastToCloud(newOrder.shopId, {
+    action: 'CREATE_ORDER',
+    order: newOrder,
+  });
+
   return newOrder;
 }
 
@@ -299,7 +334,6 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
   const shop = getShop(existing.shopId);
   const retentionMs = (shop.retentionMinutes || 10) * 60000;
 
-  // When order moves to ready or completed, arm the 10-minute auto-purge timer if not already armed
   let purgeAt = existing.purgeAt;
   if (['printing', 'ready', 'completed'].includes(status) && !purgeAt && !existing.isPurged) {
     purgeAt = new Date(Date.now() + retentionMs).toISOString();
@@ -318,14 +352,20 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  // Broadcast status to the customer's phone over the internet
+  broadcastToCloud(existing.shopId, {
+    action: 'UPDATE_STATUS',
+    orderId,
+    status,
+    note,
+    purgeAt,
+  });
+
   return updated;
 }
 
-/**
- * Triggered when the shopkeeper clicks "Download PDF".
- * Arms the 10-minute countdown timer to auto-delete the document from storage.
- */
 export function markOrderDownloaded(orderId: string): Order | undefined {
   const orders = getOrders();
   const index = orders.findIndex(o => o.id === orderId);
@@ -350,14 +390,18 @@ export function markOrderDownloaded(orderId: string): Order | undefined {
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  broadcastToCloud(existing.shopId, {
+    action: 'UPDATE_STATUS',
+    orderId,
+    status: existing.status,
+    purgeAt,
+  });
+
   return updated;
 }
 
-/**
- * Triggered when the print action is executed.
- * Arms the 10-minute countdown timer.
- */
 export function markOrderPrinted(orderId: string): Order | undefined {
   const orders = getOrders();
   const index = orders.findIndex(o => o.id === orderId);
@@ -383,14 +427,18 @@ export function markOrderPrinted(orderId: string): Order | undefined {
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  broadcastToCloud(existing.shopId, {
+    action: 'UPDATE_STATUS',
+    orderId,
+    status: 'printing',
+    purgeAt,
+  });
+
   return updated;
 }
 
-/**
- * Permanently removes the binary PDF payload from the database/storage to free space
- * and guarantee customer document privacy.
- */
 export function purgeOrderDocument(orderId: string, reason: string = '10-minute retention policy'): Order | undefined {
   const orders = getOrders();
   const index = orders.findIndex(o => o.id === orderId);
@@ -401,7 +449,7 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
 
   const updated: Order = {
     ...existing,
-    fileDataUrl: undefined, // permanently stripped to clear database
+    fileDataUrl: undefined,
     isPurged: true,
     purgedAt: now,
     updatedAt: now,
@@ -413,13 +461,16 @@ export function purgeOrderDocument(orderId: string, reason: string = '10-minute 
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  broadcastToCloud(existing.shopId, {
+    action: 'PURGE_ORDER',
+    orderId,
+  });
+
   return updated;
 }
 
-/**
- * Background auto-purge worker that scans and deletes documents past their 10-minute retention timestamp.
- */
 export function checkAndPurgeExpiredDocuments(): number {
   const orders = getOrders();
   const now = Date.now();
@@ -430,7 +481,7 @@ export function checkAndPurgeExpiredDocuments(): number {
       purgedCount++;
       return {
         ...order,
-        fileDataUrl: undefined, // cleared from database!
+        fileDataUrl: undefined,
         isPurged: true,
         purgedAt: new Date(now).toISOString(),
         updatedAt: new Date(now).toISOString(),
@@ -445,13 +496,13 @@ export function checkAndPurgeExpiredDocuments(): number {
 
   if (purgedCount > 0) {
     localStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
-    notifySync();
+    notifyLocalUpdate();
   }
 
   return purgedCount;
 }
 
-// Start periodic sweep every 3 seconds
+// Background auto-purge sweep
 if (typeof window !== 'undefined') {
   setInterval(() => {
     checkAndPurgeExpiredDocuments();
@@ -469,7 +520,7 @@ export function rejectOrder(orderId: string, reason: string): Order | undefined 
     ...existing,
     status: 'cancelled',
     rejectionReason: reason,
-    fileDataUrl: undefined, // reject also cleans binary immediately
+    fileDataUrl: undefined,
     isPurged: true,
     purgedAt: now,
     updatedAt: now,
@@ -481,7 +532,15 @@ export function rejectOrder(orderId: string, reason: string): Order | undefined 
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  broadcastToCloud(existing.shopId, {
+    action: 'UPDATE_STATUS',
+    orderId,
+    status: 'cancelled',
+    note: `Rejected: ${reason}`,
+  });
+
   return updated;
 }
 
@@ -505,7 +564,15 @@ export function requestClarification(orderId: string, note: string): Order | und
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
+  broadcastToCloud(existing.shopId, {
+    action: 'UPDATE_STATUS',
+    orderId,
+    status: 'review',
+    note,
+  });
+
   return updated;
 }
 
@@ -532,17 +599,89 @@ export function reviseOrderQuote(orderId: string, newTotal: number, reason: stri
 
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
-  notifySync();
+  notifyLocalUpdate();
+
   return updated;
 }
 
 export function resetDemoData(): void {
   localStorage.removeItem(ORDERS_KEY);
   localStorage.removeItem(SHOPS_KEY);
-  notifySync();
+  notifyLocalUpdate();
+}
+
+/**
+ * Merges an order received from a smartphone over the cloud
+ */
+function handleIncomingCloudMessage(payload: CloudPayload) {
+  const orders = getOrders();
+
+  if (payload.action === 'CREATE_ORDER' && payload.order) {
+    const incoming = payload.order;
+    const exists = orders.some(o => o.id === incoming.id);
+    if (!exists) {
+      // Ensure file data URL is present for download/printing
+      if (!incoming.fileDataUrl && !incoming.isPurged) {
+        incoming.fileDataUrl = generateMinimalPdf(incoming.fileName, incoming.detectedPageCount);
+      }
+      const updated = [incoming, ...orders];
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(updated));
+      playChime();
+      notifyLocalUpdate();
+    }
+  } else if (payload.action === 'UPDATE_STATUS' && payload.orderId && payload.status) {
+    const index = orders.findIndex(o => o.id === payload.orderId);
+    if (index !== -1) {
+      const existing = orders[index];
+      const now = new Date().toISOString();
+      orders[index] = {
+        ...existing,
+        status: payload.status,
+        purgeAt: payload.purgeAt || existing.purgeAt,
+        updatedAt: now,
+        statusHistory: [
+          ...existing.statusHistory,
+          { status: payload.status, timestamp: now, note: payload.note },
+        ],
+      };
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+      notifyLocalUpdate();
+    }
+  } else if (payload.action === 'PURGE_ORDER' && payload.orderId) {
+    const index = orders.findIndex(o => o.id === payload.orderId);
+    if (index !== -1) {
+      orders[index] = {
+        ...orders[index],
+        fileDataUrl: undefined,
+        isPurged: true,
+        purgedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+      notifyLocalUpdate();
+    }
+  }
+}
+
+// Initialize Internet-wide Cloud Sync
+if (typeof window !== 'undefined') {
+  const currentShopId = 'campus-prints';
+
+  // 1. Listen live via Server-Sent Events (SSE)
+  listenToCloud(currentShopId, (payload) => {
+    handleIncomingCloudMessage(payload);
+  });
+
+  // 2. Poll recent orders submitted in the last 12 hours from phones
+  fetchRecentCloudOrders(currentShopId).then(history => {
+    history.forEach(item => {
+      handleIncomingCloudMessage(item);
+    });
+  });
 }
 
 export function subscribeToStore(onUpdate: () => void): () => void {
+  listeners.add(onUpdate);
+
   const handleStorage = (e: StorageEvent) => {
     if (e.key === ORDERS_KEY || e.key === SHOPS_KEY) {
       onUpdate();
@@ -561,6 +700,7 @@ export function subscribeToStore(onUpdate: () => void): () => void {
   }
 
   return () => {
+    listeners.delete(onUpdate);
     window.removeEventListener('storage', handleStorage);
     if (broadcastChannel) {
       broadcastChannel.removeEventListener('message', handleBroadcast);
