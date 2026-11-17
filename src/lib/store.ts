@@ -6,6 +6,10 @@ import {
   fetchRecentCloudOrders,
   type CloudPayload,
 } from './cloudSync';
+import {
+  syncOrderToFirestore,
+  syncShopToFirestore,
+} from './firebase';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
@@ -391,6 +395,7 @@ export function saveShop(shop: Shop): void {
     shops[shop.id] = shop;
     localStorage.setItem(SHOPS_KEY, JSON.stringify(shops));
     notifyLocalUpdate();
+    syncShopToFirestore(shop).catch(() => {});
   } catch (err) {
     console.error('Failed saving shop to localStorage', err);
   }
@@ -544,6 +549,9 @@ export function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'creat
   localStorage.setItem(ORDERS_KEY, JSON.stringify(updatedOrders));
   notifyLocalUpdate();
 
+  // Sync to Firestore cloud database
+  syncOrderToFirestore(newOrder).catch(() => {});
+
   // Broadcast to all phones and computers across the internet
   broadcastToCloud(newOrder.shopId, {
     action: 'CREATE_ORDER',
@@ -582,6 +590,7 @@ export function updateOrderStatus(orderId: string, status: OrderStatus, note?: s
   orders[index] = updated;
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
   notifyLocalUpdate();
+  syncOrderToFirestore(updated).catch(() => {});
 
   // Broadcast status to the customer's phone over the internet
   broadcastToCloud(existing.shopId, {

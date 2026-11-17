@@ -16,6 +16,9 @@ import {
   X,
   FileText,
   Store,
+  Database,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -26,6 +29,12 @@ import {
   getCityPlatformMetrics,
   getOrders,
 } from '../../lib/store';
+import {
+  getFirebaseConfig,
+  saveFirebaseConfig,
+  isFirebaseConfigured,
+  type FirebaseConfig,
+} from '../../lib/firebase';
 import type { Shop } from '../../types';
 
 interface SuperAdminDashboardProps {
@@ -70,6 +79,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const [newStoreColorRate, setNewStoreColorRate] = useState<number>(10.0);
   const [newStoreStatus, setNewStoreStatus] = useState<'active' | 'trial'>('active');
 
+  // Firebase Database State
+  const [isFirebaseLive, setIsFirebaseLive] = useState<boolean>(() => isFirebaseConfigured());
+  const [currentFirebaseConfig, setCurrentFirebaseConfig] = useState<FirebaseConfig | null>(() => getFirebaseConfig());
+  const [showFirebaseModal, setShowFirebaseModal] = useState<boolean>(false);
+  const [firebaseSnippetInput, setFirebaseSnippetInput] = useState<string>('');
+  const [firebaseStatusMsg, setFirebaseStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Copied feedback
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
@@ -80,6 +96,77 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const refreshData = () => {
     setShops(getAllShops());
     setMetrics(getCityPlatformMetrics());
+    setIsFirebaseLive(isFirebaseConfigured());
+    setCurrentFirebaseConfig(getFirebaseConfig());
+  };
+
+  const handleConnectFirebase = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFirebaseStatusMsg(null);
+
+    const input = firebaseSnippetInput.trim();
+    if (!input) {
+      setFirebaseStatusMsg({ type: 'error', text: 'Please paste your Firebase configuration code or JSON.' });
+      return;
+    }
+
+    try {
+      let parsed: Partial<FirebaseConfig> = {};
+
+      if (input.startsWith('{') && input.endsWith('}')) {
+        parsed = JSON.parse(input);
+      } else {
+        // Extract values using regex matching
+        const extract = (key: string) => {
+          const match = input.match(new RegExp(`${key}["']?\\s*:\\s*["']([^"']+)["']`));
+          return match ? match[1] : '';
+        };
+
+        parsed = {
+          apiKey: extract('apiKey'),
+          authDomain: extract('authDomain'),
+          projectId: extract('projectId'),
+          storageBucket: extract('storageBucket'),
+          messagingSenderId: extract('messagingSenderId'),
+          appId: extract('appId'),
+        };
+      }
+
+      if (!parsed.projectId || !parsed.apiKey) {
+        setFirebaseStatusMsg({
+          type: 'error',
+          text: 'Could not find "projectId" and "apiKey" in the snippet. Make sure you copy the entire firebaseConfig object.',
+        });
+        return;
+      }
+
+      const fullConfig: FirebaseConfig = {
+        apiKey: parsed.apiKey || '',
+        authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
+        projectId: parsed.projectId || '',
+        storageBucket: parsed.storageBucket || `${parsed.projectId}.firebasestorage.app`,
+        messagingSenderId: parsed.messagingSenderId || '',
+        appId: parsed.appId || '',
+      };
+
+      saveFirebaseConfig(fullConfig);
+      setIsFirebaseLive(true);
+      setCurrentFirebaseConfig(fullConfig);
+      setFirebaseStatusMsg({
+        type: 'success',
+        text: `✓ Successfully connected to Firebase Project: "${fullConfig.projectId}"! Real-time Firestore sync is now active.`,
+      });
+
+      setTimeout(() => {
+        setShowFirebaseModal(false);
+        refreshData();
+      }, 1500);
+    } catch (err: unknown) {
+      setFirebaseStatusMsg({
+        type: 'error',
+        text: `Error parsing configuration: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   };
 
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -263,6 +350,39 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             Exit to Counter
           </Button>
         </div>
+      </div>
+
+      {/* Firebase Cloud Database Status Banner */}
+      <div className="bg-white p-4 rounded-[12px] border border-[#e5e3df] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isFirebaseLive ? 'bg-[#e6f4ea] text-[#137333]' : 'bg-[#fef7e0] text-[#b06000]'}`}>
+            <Database className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-xs sm:text-sm text-[#1a1a1a]">
+                Database: {isFirebaseLive ? 'Firebase Firestore (Live & Synced)' : 'Firebase Database (Ready to Connect)'}
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFirebaseLive ? 'bg-[#e6f4ea] text-[#137333]' : 'bg-[#fef7e0] text-[#b06000]'}`}>
+                {isFirebaseLive ? 'CONNECTED' : 'ACTION REQUIRED'}
+              </span>
+            </div>
+            <p className="text-[11px] text-[#787671] mt-0.5">
+              {isFirebaseLive
+                ? `Project ID: "${currentFirebaseConfig?.projectId}" • Orders and bookstore queues sync in real-time.`
+                : 'Connect your Firebase project to eliminate "Order Not Found" and sync all stores across the city.'}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          variant={isFirebaseLive ? 'secondary' : 'primary'}
+          size="sm"
+          onClick={() => setShowFirebaseModal(true)}
+          icon={<Database className="w-3.5 h-3.5" />}
+        >
+          {isFirebaseLive ? 'Firebase Settings' : 'Connect Firebase'}
+        </Button>
       </div>
 
       {/* Metric Cards */}
@@ -809,6 +929,98 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
                   className="w-full py-2.5 text-xs font-semibold"
                 >
                   Create Bookstore & Generate Counter Kit
+                </Button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* Firebase Database Configuration Modal */}
+      {showFirebaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-[14px] border border-[#e5e3df] shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+            
+            <div className="bg-[#0a1530] text-white p-5 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-2.5">
+                <Database className="w-5 h-5 text-[#f9e79f]" />
+                <div>
+                  <h3 className="text-sm font-semibold">Connect Firebase Database</h3>
+                  <p className="text-[11px] text-[#a4a097]">Persistent Cloud Firestore & File Storage</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFirebaseModal(false)}
+                className="p-1 text-[#a4a097] hover:text-white rounded hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConnectFirebase} className="p-6 space-y-4">
+              
+              {/* Instructions */}
+              <div className="p-3 bg-[#f6f5f4] rounded-[10px] border border-[#e5e3df] text-xs space-y-1.5 text-[#37352f]">
+                <div className="font-semibold text-[#1a1a1a] flex items-center gap-1.5">
+                  <span>How to get your Firebase snippet (2-minute free setup):</span>
+                </div>
+                <ol className="list-decimal pl-4 space-y-1 text-[11px] text-[#5d5b54]">
+                  <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-[#5645d4] underline font-medium">console.firebase.google.com</a> and click <strong>Add project</strong>.</li>
+                  <li>Click <strong>Build &gt; Firestore Database</strong> &gt; Create Database (choose <em>Start in Test mode</em>).</li>
+                  <li>Click the ⚙️ gear icon &gt; <strong>Project settings</strong> &gt; Under <em>Your apps</em> click Web (<strong>&lt;/&gt;</strong>) and copy the <code className="bg-white px-1 py-0.5 rounded font-mono">firebaseConfig</code> object.</li>
+                </ol>
+              </div>
+
+              {/* Paste Config Input */}
+              <div>
+                <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
+                  Paste your Firebase Config Snippet or JSON:
+                </label>
+                <textarea
+                  rows={8}
+                  value={firebaseSnippetInput}
+                  onChange={(e) => setFirebaseSnippetInput(e.target.value)}
+                  placeholder={`const firebaseConfig = {\n  apiKey: "AIzaSy...",\n  authDomain: "my-print-app.firebaseapp.com",\n  projectId: "my-print-app",\n  storageBucket: "my-print-app.firebasestorage.app",\n  messagingSenderId: "1234567890",\n  appId: "1:1234567890:web:..."\n};`}
+                  className="w-full text-xs p-3 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all"
+                />
+              </div>
+
+              {/* Status Message */}
+              {firebaseStatusMsg && (
+                <div className={`p-3 rounded-[8px] text-xs flex items-center gap-2 ${
+                  firebaseStatusMsg.type === 'success'
+                    ? 'bg-[#e6f4ea] text-[#137333] border border-[#cbf0d8]'
+                    : 'bg-[#fdf3f2] text-[#d44c47] border border-[#f5c6cb]'
+                }`}>
+                  {firebaseStatusMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  )}
+                  <span>{firebaseStatusMsg.text}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowFirebaseModal(false)}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="py-2 px-4"
+                  icon={<Database className="w-4 h-4" />}
+                >
+                  Save & Connect Firebase
                 </Button>
               </div>
 

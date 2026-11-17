@@ -10,6 +10,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { getOrder, subscribeToStore } from '../../lib/store';
+import { getOrderFromFirestore } from '../../lib/firebase';
+import { fetchRecentCloudOrders } from '../../lib/cloudSync';
 import type { Order, OrderStatus } from '../../types';
 
 interface CustomerOrderStatusProps {
@@ -22,13 +24,63 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   onBackToOrder,
 }) => {
   const [order, setOrder] = useState<Order | undefined>(() => getOrder(orderId));
+  const [isSearchingCloud, setIsSearchingCloud] = useState<boolean>(!order);
 
   useEffect(() => {
+    // If order is present locally, subscribe to local updates
     const unsub = subscribeToStore(() => {
-      setOrder(getOrder(orderId));
+      const local = getOrder(orderId);
+      if (local) {
+        setOrder(local);
+        setIsSearchingCloud(false);
+      }
     });
+
+    // If order was NOT found locally, query Firestore & cloud sync
+    if (!order) {
+      setIsSearchingCloud(true);
+      (async () => {
+        try {
+          // 1. Try Firestore database
+          const fromFirestore = await getOrderFromFirestore(orderId);
+          if (fromFirestore) {
+            setOrder(fromFirestore);
+            setIsSearchingCloud(false);
+            return;
+          }
+
+          // 2. Try cloud event replay
+          const cloudEvents = await fetchRecentCloudOrders('campus-prints');
+          const matched = cloudEvents.find(p => p.order && p.order.id === orderId);
+          if (matched && matched.order) {
+            setOrder(matched.order);
+            setIsSearchingCloud(false);
+            return;
+          }
+        } catch {
+          // handled
+        } finally {
+          setIsSearchingCloud(false);
+        }
+      })();
+    }
+
     return unsub;
   }, [orderId]);
+
+  if (isSearchingCloud) {
+    return (
+      <div className="max-w-md mx-auto py-16 px-4 text-center">
+        <Card className="p-8 space-y-4 bg-white border border-[#e5e3df] rounded-[12px] shadow-sm">
+          <div className="w-8 h-8 border-2 border-[#5645d4] border-t-transparent rounded-full animate-spin mx-auto" />
+          <h2 className="text-sm font-bold text-[#1a1a1a]">Connecting to Cloud Database...</h2>
+          <p className="text-xs text-[#787671]">
+            Retrieving live status for order <code className="font-mono font-semibold text-[#5645d4]">{orderId}</code>
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   if (!order) {
     return (
