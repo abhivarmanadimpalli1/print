@@ -11,29 +11,133 @@ const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
 const SYNC_CHANNEL = 'qr_print_sync_channel';
 
-export const DEFAULT_SHOP: Shop = {
-  id: 'campus-prints',
-  name: 'Campus QuickPrint & Stationers',
-  tagline: 'Fast, crisp thesis, notes & document printing in 2 minutes',
-  location: 'Shop 4, Ground Floor, Academic Complex, North Gate',
-  phone: '+91 98765 43210',
-  isOpen: true,
-  openingHours: 'Mon - Sat: 8:30 AM – 9:00 PM',
-  pricing: {
-    bwPerPage: 2.0,
-    colorPerPage: 10.0,
-    duplexRateRatio: 0.9,
-    paperSizes: [
-      { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
-      { id: 'Letter', name: 'Letter (8.5" x 11")', multiplier: 1.0 },
-      { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
-      { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
-    ],
+export const INITIAL_SHOPS: Record<string, Shop> = {
+  'campus-prints': {
+    id: 'campus-prints',
+    slug: 'campus-prints',
+    name: 'Campus QuickPrint & Stationers',
+    tagline: 'Fast, crisp thesis, notes & document printing in 2 minutes',
+    location: 'Shop 4, Ground Floor, Academic Complex, North Gate',
+    phone: '+91 98765 43210',
+    ownerName: 'Ramesh Verma',
+    ownerPhone: '+91 98765 43210',
+    loginId: 'campus',
+    passwordHash: '1234',
+    monthlySubscriptionFee: 499,
+    subscriptionStatus: 'active',
+    subscriptionRenewDate: new Date(Date.now() + 25 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
+    isOpen: true,
+    openingHours: 'Mon - Sat: 8:30 AM – 9:00 PM',
+    pricing: {
+      bwPerPage: 2.0,
+      colorPerPage: 10.0,
+      duplexRateRatio: 0.9,
+      paperSizes: [
+        { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+        { id: 'Letter', name: 'Letter (8.5" x 11")', multiplier: 1.0 },
+        { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
+        { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
+      ],
+    },
+    acceptedPaymentModes: ['counter', 'online'],
+    retentionMinutes: 10,
+    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=',
   },
-  acceptedPaymentModes: ['counter', 'online'],
-  retentionMinutes: 10, // 10 minutes auto-purge after download/print
-  qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=',
+  'sri-krishna-xerox': {
+    id: 'sri-krishna-xerox',
+    slug: 'sri-krishna-xerox',
+    name: 'Sri Krishna Xerox & Book Depot',
+    tagline: 'High-speed xerox, engineering drawing prints & project binding',
+    location: 'Opp. University Main Gate, Gandhi Chowk',
+    phone: '+91 98480 12345',
+    ownerName: 'K. Srinivas Rao',
+    ownerPhone: '+91 98480 12345',
+    loginId: 'krishna',
+    passwordHash: '2345',
+    monthlySubscriptionFee: 499,
+    subscriptionStatus: 'active',
+    subscriptionRenewDate: new Date(Date.now() + 18 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 45 * 86400000).toISOString(),
+    isOpen: true,
+    openingHours: 'Mon - Sun: 8:00 AM – 9:30 PM',
+    pricing: {
+      bwPerPage: 2.0,
+      colorPerPage: 8.0,
+      duplexRateRatio: 0.9,
+      paperSizes: [
+        { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+        { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
+        { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
+      ],
+    },
+    acceptedPaymentModes: ['counter', 'online'],
+    retentionMinutes: 10,
+    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=',
+  },
+  'balaji-xerox': {
+    id: 'balaji-xerox',
+    slug: 'balaji-xerox',
+    name: 'Balaji Educational Xerox & Spiral Binding',
+    tagline: 'Fast colour Xerox, lab manuals & instant assignment printouts',
+    location: 'Near Govt Polytechnic College, Line 3',
+    phone: '+91 99123 45678',
+    ownerName: 'Venkat Raman',
+    ownerPhone: '+91 99123 45678',
+    loginId: 'balaji',
+    passwordHash: '3456',
+    monthlySubscriptionFee: 499,
+    subscriptionStatus: 'active',
+    subscriptionRenewDate: new Date(Date.now() + 22 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+    isOpen: true,
+    openingHours: 'Mon - Sat: 8:30 AM – 8:30 PM',
+    pricing: {
+      bwPerPage: 2.0,
+      colorPerPage: 10.0,
+      duplexRateRatio: 0.85,
+      paperSizes: [
+        { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+        { id: 'Letter', name: 'Letter (8.5" x 11")', multiplier: 1.0 },
+      ],
+    },
+    acceptedPaymentModes: ['counter', 'online'],
+    retentionMinutes: 10,
+    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=',
+  },
+  'vidyarthi-books': {
+    id: 'vidyarthi-books',
+    slug: 'vidyarthi-books',
+    name: 'Vidyarthi Book Centre & Fast Xerox',
+    tagline: 'All university text books, guides & high-volume print counter',
+    location: 'Shop 12, Municipal Complex, College Road',
+    phone: '+91 97000 88990',
+    ownerName: 'P. Suresh Reddy',
+    ownerPhone: '+91 97000 88990',
+    loginId: 'vidyarthi',
+    passwordHash: '4567',
+    monthlySubscriptionFee: 599,
+    subscriptionStatus: 'trial',
+    subscriptionRenewDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    isOpen: true,
+    openingHours: 'Mon - Sat: 9:00 AM – 9:00 PM',
+    pricing: {
+      bwPerPage: 1.5,
+      colorPerPage: 8.0,
+      duplexRateRatio: 0.9,
+      paperSizes: [
+        { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+        { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
+      ],
+    },
+    acceptedPaymentModes: ['counter', 'online'],
+    retentionMinutes: 10,
+    qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=',
+  },
 };
+
+export const DEFAULT_SHOP: Shop = INITIAL_SHOPS['campus-prints'];
 
 const INITIAL_ORDERS: Order[] = [
   {
@@ -105,7 +209,7 @@ const INITIAL_ORDERS: Order[] = [
   {
     id: 'ORD-1038',
     orderNumber: 1038,
-    shopId: 'campus-prints',
+    shopId: 'sri-krishna-xerox',
     customerName: 'Rahul Verma',
     customerPhone: '+91 98334 56789',
     fileName: 'Lab_Report_Sem6_Digital_Electronics.pdf',
@@ -140,7 +244,7 @@ const INITIAL_ORDERS: Order[] = [
   {
     id: 'ORD-1037',
     orderNumber: 1037,
-    shopId: 'campus-prints',
+    shopId: 'balaji-xerox',
     customerName: 'Ananya Deshmukh',
     customerPhone: '+91 98445 67890',
     fileName: 'Scholarship_Application_Form_Filled.pdf',
@@ -176,7 +280,7 @@ const INITIAL_ORDERS: Order[] = [
   {
     id: 'ORD-1036',
     orderNumber: 1036,
-    shopId: 'campus-prints',
+    shopId: 'vidyarthi-books',
     customerName: 'Vikram Singh',
     customerPhone: '+91 98556 78901',
     fileName: 'Identity_Card_Scan_Passport_Size.pdf',
@@ -249,13 +353,31 @@ function notifyLocalUpdate() {
   listeners.forEach(fn => fn());
 }
 
-export function getShop(shopId: string = 'campus-prints'): Shop {
+export function getAllShops(): Shop[] {
   try {
     const raw = localStorage.getItem(SHOPS_KEY);
-    if (raw) {
-      const shops: Record<string, Shop> = JSON.parse(raw);
-      if (shops[shopId]) return shops[shopId];
+    if (!raw) {
+      localStorage.setItem(SHOPS_KEY, JSON.stringify(INITIAL_SHOPS));
+      return Object.values(INITIAL_SHOPS);
     }
+    const shops: Record<string, Shop> = JSON.parse(raw);
+    const list = Object.values(shops);
+    if (list.length === 0) {
+      localStorage.setItem(SHOPS_KEY, JSON.stringify(INITIAL_SHOPS));
+      return Object.values(INITIAL_SHOPS);
+    }
+    return list;
+  } catch (err) {
+    console.error('Failed reading all shops from localStorage', err);
+    return Object.values(INITIAL_SHOPS);
+  }
+}
+
+export function getShop(shopIdOrSlug: string = 'campus-prints'): Shop {
+  try {
+    const shops = getAllShops();
+    const found = shops.find(s => s.id === shopIdOrSlug || s.slug === shopIdOrSlug);
+    if (found) return found;
   } catch (err) {
     console.error('Failed reading shop from localStorage', err);
   }
@@ -265,13 +387,120 @@ export function getShop(shopId: string = 'campus-prints'): Shop {
 export function saveShop(shop: Shop): void {
   try {
     const raw = localStorage.getItem(SHOPS_KEY);
-    const shops: Record<string, Shop> = raw ? JSON.parse(raw) : {};
+    const shops: Record<string, Shop> = raw ? JSON.parse(raw) : { ...INITIAL_SHOPS };
     shops[shop.id] = shop;
     localStorage.setItem(SHOPS_KEY, JSON.stringify(shops));
     notifyLocalUpdate();
   } catch (err) {
     console.error('Failed saving shop to localStorage', err);
   }
+}
+
+export function addNewStore(newShopData: Partial<Shop> & { name: string; ownerName?: string; ownerPhone?: string }): Shop {
+  const slug = (newShopData.slug || newShopData.id || newShopData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')) || `shop-${Date.now()}`;
+  const id = slug;
+  
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://print.vercel.app';
+  const customerUrl = `${origin}/s/${slug}`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(customerUrl)}`;
+
+  const createdShop: Shop = {
+    id,
+    slug,
+    name: newShopData.name,
+    tagline: newShopData.tagline || 'High-speed document printing, xerox & binding',
+    location: newShopData.location || 'Local Bookstore & Xerox Center',
+    phone: newShopData.phone || newShopData.ownerPhone || '+91 98000 00000',
+    ownerName: newShopData.ownerName || 'Store Manager',
+    ownerPhone: newShopData.ownerPhone || newShopData.phone || '+91 98000 00000',
+    loginId: newShopData.loginId || slug.replace(/-/g, '_'),
+    passwordHash: newShopData.passwordHash || Math.floor(1000 + Math.random() * 9000).toString(),
+    monthlySubscriptionFee: newShopData.monthlySubscriptionFee || 499,
+    subscriptionStatus: newShopData.subscriptionStatus || 'active',
+    subscriptionRenewDate: newShopData.subscriptionRenewDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+    createdAt: new Date().toISOString(),
+    isOpen: true,
+    openingHours: newShopData.openingHours || 'Mon - Sat: 8:30 AM – 9:00 PM',
+    pricing: newShopData.pricing || {
+      bwPerPage: 2.0,
+      colorPerPage: 10.0,
+      duplexRateRatio: 0.9,
+      paperSizes: [
+        { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
+        { id: 'Letter', name: 'Letter (8.5" x 11")', multiplier: 1.0 },
+        { id: 'Legal', name: 'Legal (Long)', multiplier: 1.25 },
+        { id: 'A3', name: 'A3 (Large Ledger)', multiplier: 2.0 },
+      ],
+    },
+    acceptedPaymentModes: ['counter', 'online'],
+    retentionMinutes: 10,
+    qrCodeUrl,
+  };
+
+  saveShop(createdShop);
+  return createdShop;
+}
+
+export function deleteStore(shopId: string): void {
+  try {
+    const raw = localStorage.getItem(SHOPS_KEY);
+    const shops: Record<string, Shop> = raw ? JSON.parse(raw) : { ...INITIAL_SHOPS };
+    delete shops[shopId];
+    localStorage.setItem(SHOPS_KEY, JSON.stringify(shops));
+    notifyLocalUpdate();
+  } catch (err) {
+    console.error('Failed deleting store', err);
+  }
+}
+
+export function verifyStoreCredentials(shopIdOrSlug: string, loginId: string, secret: string): boolean {
+  const shop = getShop(shopIdOrSlug);
+  if (!shop) return false;
+  const matchId = (shop.loginId || shop.slug || shop.id).trim().toLowerCase() === loginId.trim().toLowerCase();
+  const matchSecret = (shop.passwordHash || '1234').trim() === secret.trim();
+  return matchId && matchSecret;
+}
+
+export function getAllOrders(): Order[] {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY);
+    if (!raw) {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(INITIAL_ORDERS));
+      return INITIAL_ORDERS;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return INITIAL_ORDERS;
+  }
+}
+
+export function getCityPlatformMetrics(): {
+  totalShops: number;
+  activeSubscriptions: number;
+  monthlyRecurringRevenue: number;
+  totalCityOrders: number;
+  totalCityGrossSales: number;
+  totalCityPagesPrinted: number;
+} {
+  const shops = getAllShops();
+  const orders = getAllOrders();
+
+  const activeSubs = shops.filter(s => s.subscriptionStatus === 'active' || s.subscriptionStatus === 'trial').length;
+  const monthlyRecurringRevenue = shops.reduce((sum, s) => {
+    return sum + (s.subscriptionStatus === 'active' ? (s.monthlySubscriptionFee || 499) : 0);
+  }, 0);
+
+  const totalCityGrossSales = orders.reduce((sum, o) => sum + (o.config?.subtotal || 0), 0);
+  const totalCityPagesPrinted = orders.reduce((sum, o) => sum + (o.config?.selectedPageCount || 0) * (o.config?.copies || 1), 0);
+
+  return {
+    totalShops: shops.length,
+    activeSubscriptions: activeSubs,
+    monthlyRecurringRevenue,
+    totalCityOrders: orders.length,
+    totalCityGrossSales,
+    totalCityPagesPrinted,
+  };
 }
 
 export function getOrders(shopId: string = 'campus-prints'): Order[] {
