@@ -64,6 +64,19 @@ values ('abhinav', '{
 }')
 on conflict do nothing;
 
+insert into public.quickprint_shops (shop_id, profile)
+values ('c', '{
+  "id":"c","slug":"c","name":"chinna A TO Z collection","location":"Central City Bookstore","phone":"7989859191",
+  "tagline":"High-speed document printing, xerox & binding","openingHours":"Mon - Sat: 8:30 AM – 9:00 PM",
+  "isOpen":true,"retentionMinutes":10,"acceptedPaymentModes":["counter","online"],
+  "pricing":{"bwPerPage":2,"colorPerPage":10,"duplexRateRatio":0.9,"paperSizes":[
+    {"id":"A4","name":"A4 (Standard 75 GSM)","multiplier":1},
+    {"id":"Legal","name":"Legal (Long)","multiplier":1.25},
+    {"id":"A3","name":"A3 (Large Ledger)","multiplier":2}
+  ]}
+}')
+on conflict do nothing;
+
 create or replace function public.quickprint_is_platform_admin()
 returns boolean language sql stable security definer set search_path = ''
 as $$
