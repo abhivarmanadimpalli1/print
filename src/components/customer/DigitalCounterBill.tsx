@@ -110,7 +110,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
                   TOKEN #{order.orderNumber}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#2b3553]">
+              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#404040]">
                 <Badge status={order.status} size="sm" />
                 <span className="text-[#a4a097]">
                   {stage === 'complete'
@@ -129,7 +129,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
           <ReceiptPrinter.Paper id="printable-receipt" className="space-y-5 text-left">
             {/* Bill Header */}
             <div className="text-center pb-3 border-b border-dashed border-[#c8c4be] space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#f0edfa] text-[#5645d4] text-[10px] font-bold tracking-wider uppercase mb-1">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#f9ecea] text-[#da291c] text-[10px] font-bold tracking-wider uppercase mb-1">
                 <Sparkles className="w-3 h-3" />
                 <span>Official Digital Counter Bill</span>
               </div>
@@ -163,7 +163,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
                 Present This Token At Counter
               </span>
               
-              <div className="text-4xl sm:text-5xl font-black font-mono text-[#5645d4] tracking-tight">
+              <div className="text-4xl sm:text-5xl font-black font-mono text-[#da291c] tracking-tight">
                 #{order.orderNumber}
               </div>
 
@@ -242,7 +242,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
 
               <div className="flex justify-between py-1 border-b border-[#f0eeec]">
                 <span className="text-[#5d5b54] flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-[#5645d4]" />
+                  <FileText className="w-3.5 h-3.5 text-[#da291c]" />
                   <span className="truncate max-w-[190px]">{order.fileName}</span>
                 </span>
                 <span className="font-semibold text-[#1a1a1a]">{order.config.selectedPageCount} pgs</span>
@@ -280,7 +280,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
                 <div>
                   <span className="text-sm font-bold text-[#1a1a1a] block">Grand Total:</span>
                   <span className="text-[10px] text-[#787671]">
-                    Payment: <strong className="text-[#5645d4]">{order.paymentStatus === 'paid' ? 'Paid Online [Sandbox]' : 'Pay at Counter (Cash/UPI)'}</strong>
+                    Payment: <strong className="text-[#da291c]">{order.paymentStatus === 'paid' ? 'Paid Online [Sandbox]' : 'Pay at Counter (Cash/UPI)'}</strong>
                   </span>
                 </div>
                 <div className="text-right">
@@ -341,7 +341,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
             <button
               type="button"
               onClick={onBackToNewOrder}
-              className="text-xs font-semibold text-[#5645d4] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#da291c] hover:underline cursor-pointer"
             >
               + Place Another Print Order
             </button>

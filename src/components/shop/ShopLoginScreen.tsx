@@ -44,24 +44,24 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4">
-      <Card className="max-w-md w-full p-8 bg-white border border-[#e5e3df] shadow-2xl rounded-[16px] space-y-6">
+      <Card className="max-w-md w-full p-8 bg-[#242424] border border-[#3d3d3d] shadow-none rounded-none space-y-6">
         
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-full bg-[#0a1530] text-[#f9e79f] mx-auto flex items-center justify-center shadow-sm">
+          <div className="w-14 h-14 rounded-full bg-[#181818] text-[#ffffff] mx-auto flex items-center justify-center shadow-none">
             <Store className="w-7 h-7" />
           </div>
 
-          <h2 className="text-xl font-black text-[#0a1530] tracking-tight">
+          <h2 className="text-xl font-black text-[#ffffff] tracking-tight">
             {shop.name}
           </h2>
 
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#f0edfa] text-[#5645d4] text-[11px] font-bold tracking-wider uppercase">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#303030] text-[#ff8278] text-[11px] font-bold tracking-wider uppercase">
             <Lock className="w-3 h-3" />
             <span>Counter Operator Portal</span>
           </div>
 
-          <p className="text-xs text-[#787671] pt-1">
+          <p className="text-xs text-[#b0b0b0] pt-1">
             Sign in to unlock your real-time incoming print queue, auto-chime, and counter hardware actions.
           </p>
         </div>
@@ -69,10 +69,10 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {setupCode ? (
-            <p className="text-xs text-[#787671]">Activate this browser to open the queue and download files for {shop.name}.</p>
+            <p className="text-xs text-[#b0b0b0]">Activate this browser to open the queue and download files for {shop.name}.</p>
           ) : <>
           <div>
-            <label className="block text-xs font-semibold text-[#37352f] mb-1.5">
+            <label className="block text-xs font-semibold text-[#dedede] mb-1.5">
               Counter email
             </label>
             <input
@@ -82,19 +82,19 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
               placeholder="counter@example.com"
               required
               autoComplete="username"
-              className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono"
+              className="w-full text-xs px-3.5 py-2.5 bg-[#1c1c1c] border border-[#3d3d3d] rounded-none text-[#ffffff] focus:bg-[#242424] focus:outline-none focus:ring-1 focus:ring-[#da291c] transition-all font-mono"
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-[#37352f]">
+              <label className="block text-xs font-semibold text-[#dedede]">
                 Password
               </label>
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-[11px] text-[#5645d4] hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-[11px] text-[#ff8278] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                 <span>{showPassword ? 'Hide' : 'Show'}</span>
@@ -109,13 +109,13 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
               autoComplete="current-password"
               required
               autoFocus
-              className="w-full text-xs px-3.5 py-2.5 bg-[#f6f5f4] border border-[#e5e3df] rounded-[8px] text-[#1a1a1a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#5645d4] transition-all font-mono tracking-widest text-center text-sm"
+              className="w-full text-xs px-3.5 py-2.5 bg-[#1c1c1c] border border-[#3d3d3d] rounded-none text-[#ffffff] focus:bg-[#242424] focus:outline-none focus:ring-1 focus:ring-[#da291c] transition-all font-mono tracking-widest text-center text-sm"
             />
           </div>
           </>}
 
           {error && (
-            <div className="p-2.5 bg-[#fdf3f2] border border-[#f5c6cb] rounded-[8px] text-xs text-[#d44c47]">
+            <div className="p-2.5 bg-[#402321] border border-[#ff8278]/30 rounded-none text-xs text-[#ff8278]">
               {error}
             </div>
           )}
@@ -124,7 +124,7 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
             type="submit"
             variant="primary"
             disabled={isSigningIn}
-            className="w-full py-2.5 text-xs font-semibold bg-[#0a1530] hover:bg-[#1a2a52]"
+            className="w-full py-2.5 text-xs font-semibold bg-[#181818] hover:bg-[#303030]"
           >
             {isSigningIn ? 'Please wait…' : setupCode ? 'Activate this counter' : 'Unlock Counter Dashboard'}
           </Button>
@@ -132,14 +132,14 @@ export const ShopLoginScreen: React.FC<ShopLoginScreenProps> = ({
           <button
             type="button"
             onClick={onBackToCustomer}
-            className="w-full text-center text-xs text-[#787671] hover:text-[#1a1a1a] pt-1 flex items-center justify-center gap-1 cursor-pointer"
+            className="w-full text-center text-xs text-[#b0b0b0] hover:text-[#ffffff] pt-1 flex items-center justify-center gap-1 cursor-pointer"
           >
             <ArrowLeft className="w-3 h-3" />
             <span>Back to customer print ordering</span>
           </button>
         </form>
 
-        <div className="pt-2 border-t border-[#e5e3df] text-center text-[10px] text-[#a4a097]">
+        <div className="pt-2 border-t border-[#3d3d3d] text-center text-[10px] text-[#969696]">
           Powered by Campus QuickPrint SaaS Network • Managed by Abhinav (+91 7989869191)
         </div>
       </Card>

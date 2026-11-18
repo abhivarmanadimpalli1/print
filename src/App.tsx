@@ -206,7 +206,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f6f5f4] flex flex-col text-[#37352f] antialiased selection:bg-[#e6e0f5] selection:text-[#5645d4]">
+    <div className="app-shell min-h-screen bg-[#181818] flex flex-col text-[#dedede] antialiased selection:bg-[#303030] selection:text-[#ff8278]">
       
       {/* Top Header (Automatically adapts: Pure white-label for Customer, Workstation for Shopkeeper) */}
       <Header
@@ -226,7 +226,7 @@ export function App() {
         
         {/* 1. CUSTOMER VIEW: Dedicated, Fast, Distraction-Free Kiosk for Students */}
         {currentView === 'customer' && (
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="max-w-7xl mx-auto">
             {activeTrackingOrderId ? (
               <CustomerOrderStatus
                 orderId={activeTrackingOrderId}
@@ -328,10 +328,10 @@ export function App() {
       </main>
 
       {/* Footer: Pure White-Label for Customers, Admin Access only in Backoffice */}
-      <footer className="border-t border-[#e5e3df] bg-white py-6 mt-12 print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#787671]">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#1a1a1a]">{shop.name}</span>
+      <footer className="border-t border-[#3d3d3d] bg-[#242424] py-6 mt-12 print:hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#b0b0b0]">
+          <div className="flex flex-wrap justify-center sm:justify-start items-center gap-2">
+            <span className="font-semibold text-[#ffffff]">{shop.name}</span>
             <span>•</span>
             <span>Self-Service Instant Print Kiosk</span>
             <span>•</span>
@@ -343,7 +343,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => handleViewChange('admin')}
-                className="text-[#5645d4] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                className="text-[#ff8278] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Platform Owner Portal (Abhinav)</span>

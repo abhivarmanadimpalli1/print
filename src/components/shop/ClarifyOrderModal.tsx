@@ -26,7 +26,7 @@ export const ClarifyOrderModal: React.FC<ClarifyOrderModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-white rounded-[12px] border border-[#e5e3df] shadow-2xl max-w-md w-full overflow-hidden">
+      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full overflow-hidden">
         <div className="bg-[#dd5b00] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <HelpCircle className="w-5 h-5" />
@@ -39,46 +39,46 @@ export const ClarifyOrderModal: React.FC<ClarifyOrderModalProps> = ({
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#5d5b54] mb-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[#bcbcbc] mb-1.5">
               Message to Customer
             </label>
             <textarea
               rows={3}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="w-full text-xs p-3 border border-[#c8c4be] rounded-[8px] outline-none focus:border-[#dd5b00]"
+              className="w-full text-xs p-3 border border-[#606060] rounded-none outline-none focus:border-[#dd5b00]"
               placeholder="Explain formatting questions, color coverage, or binding options..."
             />
           </div>
 
-          <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-[#1a1a1a]">
+          <div className="p-3 bg-[#1c1c1c] rounded-none border border-[#3d3d3d] space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-[#ffffff]">
               <input
                 type="checkbox"
                 checked={shouldReviseAmount}
                 onChange={(e) => setShouldReviseAmount(e.target.checked)}
-                className="accent-[#5645d4]"
+                className="accent-[#da291c]"
               />
               <span>Revise Estimated Quote Amount</span>
             </label>
 
             {shouldReviseAmount && (
-              <div className="pt-2 border-t border-[#e5e3df] flex items-center gap-3">
-                <span className="text-xs text-[#787671]">New Total (₹):</span>
+              <div className="pt-2 border-t border-[#3d3d3d] flex items-center gap-3">
+                <span className="text-xs text-[#b0b0b0]">New Total (₹):</span>
                 <input
                   type="number"
                   step="0.5"
                   min="0"
                   value={revisedAmount}
                   onChange={(e) => setRevisedAmount(parseFloat(e.target.value) || 0)}
-                  className="w-28 h-9 px-2 text-sm font-bold border border-[#c8c4be] rounded-[6px] outline-none focus:border-[#5645d4]"
+                  className="w-28 h-9 px-2 text-sm font-bold border border-[#606060] rounded-none outline-none focus:border-[#da291c]"
                 />
-                <span className="text-[11px] text-[#787671] line-through">₹{currentAmount.toFixed(2)}</span>
+                <span className="text-[11px] text-[#b0b0b0] line-through">₹{currentAmount.toFixed(2)}</span>
               </div>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-[#e5e3df]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#3d3d3d]">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
             </Button>

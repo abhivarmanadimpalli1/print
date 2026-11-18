@@ -16,15 +16,15 @@ export const Card: React.FC<CardProps> = ({
   ...props
 }) => {
   const tintStyles = {
-    none: 'bg-white',
-    surface: 'bg-[#f6f5f4]',
-    peach: 'bg-[#ffe8d4]',
-    rose: 'bg-[#fde0ec]',
-    mint: 'bg-[#d9f3e1]',
-    lavender: 'bg-[#e6e0f5]',
-    sky: 'bg-[#dcecfa]',
-    yellow: 'bg-[#fef7d6]',
-    'yellow-bold': 'bg-[#f9e79f]',
+    none: 'bg-[#242424]',
+    surface: 'bg-[#1c1c1c]',
+    peach: 'bg-[#3c2b22]',
+    rose: 'bg-[#402321]',
+    mint: 'bg-[#163529]',
+    lavender: 'bg-[#303030]',
+    sky: 'bg-[#243239]',
+    yellow: 'bg-[#303030]',
+    'yellow-bold': 'bg-white',
   }[tint];
 
   const paddingStyles = {
@@ -36,12 +36,12 @@ export const Card: React.FC<CardProps> = ({
   }[padding];
 
   const borderStyles = border
-    ? 'border border-[#e5e3df]'
+    ? 'border border-[#3d3d3d]'
     : '';
 
   return (
     <div
-      className={`rounded-[12px] ${tintStyles} ${borderStyles} ${paddingStyles} ${className}`}
+      className={`qp-card rounded-none ${tintStyles} ${borderStyles} ${paddingStyles} ${className}`}
       {...props}
     >
       {children}

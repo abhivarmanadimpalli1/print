@@ -51,12 +51,12 @@ export const Badge: React.FC<BadgeProps> = ({
   }
 
   const variantStyles = {
-    purple: 'bg-[#5645d4] text-white font-semibold',
-    mint: 'bg-[#d9f3e1] text-[#1aae39] font-medium border border-[#1aae39]/30',
-    peach: 'bg-[#ffe8d4] text-[#dd5b00] font-medium border border-[#dd5b00]/30',
-    rose: 'bg-[#fde0ec] text-[#e03131] font-medium border border-[#e03131]/30',
-    sky: 'bg-[#dcecfa] text-[#0075de] font-medium border border-[#0075de]/30',
-    gray: 'bg-[#f0eeec] text-[#5d5b54] font-medium border border-[#c8c4be]/40',
+    purple: 'bg-[#da291c] text-white font-semibold',
+    mint: 'bg-[#163529] text-[#6ed5a3] font-medium border border-[#1aae39]/30',
+    peach: 'bg-[#3c2b22] text-[#f3ba83] font-medium border border-[#dd5b00]/30',
+    rose: 'bg-[#402321] text-[#ff8278] font-medium border border-[#e03131]/30',
+    sky: 'bg-[#243239] text-[#8ccce9] font-medium border border-[#0075de]/30',
+    gray: 'bg-[#303030] text-[#bcbcbc] font-medium border border-[#606060]/40',
   }[computedVariant];
 
   const sizeStyles = {

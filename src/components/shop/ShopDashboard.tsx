@@ -70,8 +70,8 @@ const PurgeTimerBadge: React.FC<{ order: Order }> = ({ order }) => {
 
   if (order.isPurged) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#787671] bg-[#f0eeec] px-2 py-0.5 rounded-full border border-[#c8c4be]/40">
-        <Trash2 className="w-3 h-3 text-[#a4a097]" />
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b0b0b0] bg-[#303030] px-2 py-0.5 rounded-full border border-[#606060]/40">
+        <Trash2 className="w-3 h-3 text-[#969696]" />
         <span>PDF Purged (Cleaned)</span>
       </span>
     );
@@ -79,7 +79,7 @@ const PurgeTimerBadge: React.FC<{ order: Order }> = ({ order }) => {
 
   if (order.purgeAt) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#dd5b00] bg-[#ffe8d4] px-2 py-0.5 rounded-full border border-[#dd5b00]/30 animate-pulse">
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#f3ba83] bg-[#3c2b22] px-2 py-0.5 rounded-full border border-[#dd5b00]/30 animate-pulse">
         <Clock className="w-3 h-3" />
         <span>Purges in {timeLeft}</span>
       </span>
@@ -87,8 +87,8 @@ const PurgeTimerBadge: React.FC<{ order: Order }> = ({ order }) => {
   }
 
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] text-[#787671] bg-[#f6f5f4] px-2 py-0.5 rounded-full">
-      <ShieldCheck className="w-3 h-3 text-[#1aae39]" />
+    <span className="inline-flex items-center gap-1 text-[10px] text-[#b0b0b0] bg-[#1c1c1c] px-2 py-0.5 rounded-full">
+      <ShieldCheck className="w-3 h-3 text-[#6ed5a3]" />
       <span>10m purge on download/print</span>
     </span>
   );
@@ -220,6 +220,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     }
   };
 
+  const selectOrder = (id: string) => {
+    setSelectedOrderId(id);
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      requestAnimationFrame(() => document.getElementById('order-inspector')?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }));
+    }
+  };
+
   // Summary Metrics
   const countNew = orders.filter(o => o.status === 'new').length;
   const countPrinting = orders.filter(o => o.status === 'printing').length;
@@ -231,48 +238,49 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">
       
+      <section className="workspace-intro"><p className="eyebrow">THE COUNTER</p><h1>Every detail. In order.</h1><p>Manage the queue and download each customer document.</p></section>
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="bg-white p-4 border-[#e5e3df]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">New & Queued</span>
-          <div className="text-2xl font-bold text-[#5645d4] mt-1 flex items-center gap-2">
+        <Card className="bg-[#242424] p-4 border-[#3d3d3d]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#b0b0b0]">New & Queued</span>
+          <div className="text-2xl font-bold text-[#ff8278] mt-1 flex items-center gap-2">
             <span>{countNew}</span>
-            {countNew > 0 && <span className="w-2 h-2 rounded-full bg-[#5645d4] animate-ping" />}
+            {countNew > 0 && <span className="w-2 h-2 rounded-full bg-[#da291c] animate-ping" />}
           </div>
-          <span className="text-[10px] text-[#a4a097]">Awaiting shop check</span>
+          <span className="text-[10px] text-[#969696]">Awaiting shop check</span>
         </Card>
 
-        <Card className="bg-white p-4 border-[#e5e3df]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Printing Now</span>
-          <div className="text-2xl font-bold text-[#dd5b00] mt-1">{countPrinting}</div>
-          <span className="text-[10px] text-[#a4a097]">In hardware spool</span>
+        <Card className="bg-[#242424] p-4 border-[#3d3d3d]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#b0b0b0]">Printing Now</span>
+          <div className="text-2xl font-bold text-[#f3ba83] mt-1">{countPrinting}</div>
+          <span className="text-[10px] text-[#969696]">In hardware spool</span>
         </Card>
 
-        <Card className="bg-white p-4 border-[#e5e3df]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Ready at Counter</span>
-          <div className="text-2xl font-bold text-[#1aae39] mt-1">{countReady}</div>
-          <span className="text-[10px] text-[#a4a097]">Awaiting customer pickup</span>
+        <Card className="bg-[#242424] p-4 border-[#3d3d3d]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#b0b0b0]">Ready at Counter</span>
+          <div className="text-2xl font-bold text-[#6ed5a3] mt-1">{countReady}</div>
+          <span className="text-[10px] text-[#969696]">Awaiting customer pickup</span>
         </Card>
 
-        <Card className="bg-white p-4 border-[#e5e3df]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#787671]">Queue Value</span>
-          <div className="text-2xl font-bold text-[#1a1a1a] mt-1">₹{totalRevenue.toFixed(0)}</div>
-          <span className="text-[10px] text-[#a4a097]">Excludes cancelled</span>
+        <Card className="bg-[#242424] p-4 border-[#3d3d3d]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#b0b0b0]">Queue Value</span>
+          <div className="text-2xl font-bold text-[#ffffff] mt-1">₹{totalRevenue.toFixed(0)}</div>
+          <span className="text-[10px] text-[#969696]">Excludes cancelled</span>
         </Card>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-[12px] border border-[#e5e3df]">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#242424] p-3 rounded-none border border-[#3d3d3d]">
         
         {/* Filter Pills */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
             onClick={() => setStatusFilter('all')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
               statusFilter === 'all'
-                ? 'bg-[#0a1530] text-white'
-                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+                ? 'bg-[#181818] text-white'
+                : 'text-[#bcbcbc] hover:bg-[#1c1c1c]'
             }`}
           >
             All ({orders.length})
@@ -282,8 +290,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
             onClick={() => setStatusFilter('needs_action')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
               statusFilter === 'needs_action'
-                ? 'bg-[#0a1530] text-white'
-                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+                ? 'bg-[#181818] text-white'
+                : 'text-[#bcbcbc] hover:bg-[#1c1c1c]'
             }`}
           >
             Needs Action ({orders.filter(o => ['new', 'review'].includes(o.status)).length})
@@ -293,8 +301,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
             onClick={() => setStatusFilter('printing')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
               statusFilter === 'printing'
-                ? 'bg-[#0a1530] text-white'
-                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+                ? 'bg-[#181818] text-white'
+                : 'text-[#bcbcbc] hover:bg-[#1c1c1c]'
             }`}
           >
             Printing ({orders.filter(o => ['approved', 'printing'].includes(o.status)).length})
@@ -304,8 +312,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
             onClick={() => setStatusFilter('ready')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
               statusFilter === 'ready'
-                ? 'bg-[#0a1530] text-white'
-                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+                ? 'bg-[#181818] text-white'
+                : 'text-[#bcbcbc] hover:bg-[#1c1c1c]'
             }`}
           >
             Ready ({orders.filter(o => o.status === 'ready').length})
@@ -315,8 +323,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
             onClick={() => setStatusFilter('completed')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all shrink-0 cursor-pointer ${
               statusFilter === 'completed'
-                ? 'bg-[#0a1530] text-white'
-                : 'text-[#5d5b54] hover:bg-[#f6f5f4]'
+                ? 'bg-[#181818] text-white'
+                : 'text-[#bcbcbc] hover:bg-[#1c1c1c]'
             }`}
           >
             Archive ({orders.filter(o => ['completed', 'cancelled'].includes(o.status)).length})
@@ -325,13 +333,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
         {/* Search Input */}
         <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-[#787671] absolute left-3 top-3 pointer-events-none" />
+          <Search className="w-4 h-4 text-[#b0b0b0] absolute left-3 top-3 pointer-events-none" />
           <input
             type="text"
             placeholder="Search name, order #..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-9 pr-3 text-xs bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] focus:border-[#5645d4] focus:bg-white outline-none"
+            className="w-full h-10 pl-9 pr-3 text-xs bg-[#1c1c1c] rounded-none border border-[#3d3d3d] focus:border-[#da291c] focus:bg-[#242424] outline-none"
           />
         </div>
 
@@ -341,11 +349,11 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left: Orders Queue (7 Cols on desktop) */}
-        <div className="lg:col-span-7 space-y-2.5">
+        <div id="order-queue" className="lg:col-span-7 space-y-2.5 scroll-mt-44">
           {filteredOrders.length === 0 ? (
-            <Card className="p-8 text-center bg-white border-[#e5e3df]">
-              <p className="text-sm font-semibold text-[#1a1a1a]">No orders found</p>
-              <p className="text-xs text-[#787671] mt-1">Try selecting a different filter or clearing search.</p>
+            <Card className="p-8 text-center bg-[#242424] border-[#3d3d3d]">
+              <p className="text-sm font-semibold text-[#ffffff]">No orders found</p>
+              <p className="text-xs text-[#b0b0b0] mt-1">Try selecting a different filter or clearing search.</p>
             </Card>
           ) : (
             filteredOrders.map(order => {
@@ -354,47 +362,52 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
               return (
                 <div
                   key={order.id}
-                  onClick={() => setSelectedOrderId(order.id)}
-                  className={`p-4 rounded-[12px] border transition-all cursor-pointer ${
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  aria-label={`Open order ${order.orderNumber} for ${order.customerName}`}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectOrder(order.id); } }}
+                  onClick={() => selectOrder(order.id)}
+                  className={`p-4 rounded-none border transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-white border-[#5645d4] ring-2 ring-[#5645d4]/20 shadow-sm'
-                      : 'bg-white border-[#e5e3df] hover:border-[#c8c4be] hover:bg-[#fafaf9]'
+                      ? 'bg-[#242424] border-[#da291c] ring-2 ring-[#da291c]/20 shadow-none'
+                      : 'bg-[#242424] border-[#3d3d3d] hover:border-[#606060] hover:bg-[#303030]'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap sm:flex-nowrap items-start justify-between gap-3">
                     
                     {/* Order Reference & Customer */}
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-[8px] bg-[#f6f5f4] border border-[#e5e3df] flex flex-col items-center justify-center shrink-0">
-                        <span className="text-[10px] uppercase font-mono font-bold text-[#787671]">Queue</span>
-                        <span className="text-xs font-mono font-bold text-[#1a1a1a]">#{order.orderNumber}</span>
+                      <div className="w-11 h-11 rounded-none bg-[#1c1c1c] border border-[#3d3d3d] flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[10px] uppercase font-mono font-bold text-[#b0b0b0]">Queue</span>
+                        <span className="text-xs font-mono font-bold text-[#ffffff]">#{order.orderNumber}</span>
                       </div>
 
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-bold text-[#1a1a1a] truncate">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <h4 className="text-sm font-bold text-[#ffffff] truncate">
                             {order.customerName}
                           </h4>
-                          <span className="text-[11px] text-[#787671] shrink-0">
+                          <span className="text-[11px] text-[#b0b0b0] shrink-0">
                             {order.customerPhone}
                           </span>
                         </div>
 
-                        <p className="text-xs text-[#5d5b54] truncate mt-0.5 flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-[#5645d4] shrink-0" />
+                        <p className="text-xs text-[#bcbcbc] truncate mt-0.5 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-[#ff8278] shrink-0" />
                           <span className="truncate">{order.fileName}</span>
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2 mt-2 text-[11px]">
-                          <span className="font-semibold text-[#1a1a1a]">
+                          <span className="font-semibold text-[#ffffff]">
                             {order.config.selectedPageCount} pgs ({order.config.sheetsNeeded} sheets)
                           </span>
                           <span>•</span>
-                          <span className={order.config.colorMode === 'color' ? 'text-[#5645d4] font-semibold' : 'text-[#5d5b54]'}>
+                          <span className={order.config.colorMode === 'color' ? 'text-[#ff8278] font-semibold' : 'text-[#bcbcbc]'}>
                             {order.config.colorMode.toUpperCase()}
                           </span>
                           <span>•</span>
-                          <span className="text-[#5d5b54]">
+                          <span className="text-[#bcbcbc]">
                             {order.config.sides === 'duplex' ? 'Duplex' : 'Single'}
                           </span>
                           <span>•</span>
@@ -406,11 +419,11 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     {/* Status & Price */}
                     <div className="text-right shrink-0 space-y-1">
                       <Badge status={order.status} size="sm" />
-                      <div className="text-base font-bold text-[#1a1a1a]">
+                      <div className="text-base font-bold text-[#ffffff]">
                         ₹{(order.config.revisedAmount || order.config.subtotal).toFixed(2)}
                       </div>
                       <span className={`text-[10px] font-medium block ${
-                        order.paymentStatus === 'paid' ? 'text-[#1aae39]' : 'text-[#dd5b00]'
+                        order.paymentStatus === 'paid' ? 'text-[#6ed5a3]' : 'text-[#f3ba83]'
                       }`}>
                         {order.paymentStatus === 'paid' ? 'Paid Online' : 'Pay at Counter'}
                       </span>
@@ -424,23 +437,24 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
         </div>
 
         {/* Right: Inspector Drawer (5 Cols on desktop) */}
-        <div className="lg:col-span-5 sticky top-20">
+        <div id="order-inspector" className="lg:col-span-5 lg:sticky lg:top-24 scroll-mt-44 lg:scroll-mt-24">
+          <button type="button" className="mb-3 text-xs text-[#bcbcbc] underline underline-offset-4 lg:hidden" onClick={() => document.getElementById('order-queue')?.scrollIntoView({block: 'start'})}>Back to order queue</button>
           {selectedOrder ? (
-            <Card className="bg-white border-[#e5e3df] p-5 space-y-5 shadow-xs">
+            <Card className="bg-[#242424] border-[#3d3d3d] p-5 space-y-5 shadow-none">
               
               {/* Header */}
-              <div className="flex items-start justify-between border-b border-[#e5e3df] pb-4">
+              <div className="flex items-start justify-between border-b border-[#3d3d3d] pb-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-[#5645d4] bg-[#e6e0f5] px-2 py-0.5 rounded">
+                    <span className="text-xs font-mono font-bold text-[#ff8278] bg-[#303030] px-2 py-0.5 rounded">
                       #{selectedOrder.orderNumber}
                     </span>
                     <Badge status={selectedOrder.status} size="sm" />
                   </div>
-                  <h3 className="text-lg font-bold text-[#1a1a1a] mt-1.5">
+                  <h3 className="text-lg font-bold text-[#ffffff] mt-1.5">
                     {selectedOrder.customerName}
                   </h3>
-                  <p className="text-xs text-[#787671]">{selectedOrder.customerPhone}</p>
+                  <p className="text-xs text-[#b0b0b0]">{selectedOrder.customerPhone}</p>
                 </div>
 
                 {/* WhatsApp Quick Message Link */}
@@ -448,7 +462,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   href={`https://wa.me/${selectedOrder.customerPhone.replace(/[^0-9]/g, '')}?text=Hello%20${encodeURIComponent(selectedOrder.customerName)},%20your%20print%20order%20%23${selectedOrder.orderNumber}%20at%20${encodeURIComponent(shop.name)}%20is%20being%20processed.`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-[#1aae39] hover:bg-[#d9f3e1] p-2 rounded-[8px] border border-[#1aae39]/30 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#6ed5a3] hover:bg-[#163529] p-2 rounded-none border border-[#1aae39]/30 transition-colors"
                   title="Message customer via WhatsApp"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
@@ -457,16 +471,16 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
               </div>
 
               {/* 10-Minute Auto-Purge Alert Banner */}
-              <div className={`p-3 rounded-[8px] border text-xs flex items-center justify-between ${
+              <div className={`p-3 rounded-none border text-xs flex items-center justify-between ${
                 selectedOrder.isPurged
-                  ? 'bg-[#f0eeec] border-[#c8c4be] text-[#5d5b54]'
+                  ? 'bg-[#303030] border-[#606060] text-[#bcbcbc]'
                   : selectedOrder.purgeAt
-                  ? 'bg-[#ffe8d4] border-[#dd5b00]/40 text-[#793400]'
-                  : 'bg-[#d9f3e1] border-[#1aae39]/30 text-[#1aae39]'
+                  ? 'bg-[#3c2b22] border-[#dd5b00]/40 text-[#bcbcbc]'
+                  : 'bg-[#163529] border-[#1aae39]/30 text-[#6ed5a3]'
               }`}>
                 <div className="flex items-center gap-2">
                   {selectedOrder.isPurged ? (
-                    <Trash2 className="w-4 h-4 text-[#787671] shrink-0" />
+                    <Trash2 className="w-4 h-4 text-[#b0b0b0] shrink-0" />
                   ) : (
                     <Clock className="w-4 h-4 shrink-0" />
                   )}
@@ -502,7 +516,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
               {/* Special Customer Notes (if provided) */}
               {selectedOrder.customerNotes && (
-                <div className="p-3 bg-[#fef7d6] rounded-[8px] border border-[#f5d75e]/60 text-xs text-[#523410]">
+                <div className="p-3 bg-[#303030] rounded-none border border-[#f5d75e]/60 text-xs text-[#f3ba83]">
                   <strong className="block font-semibold mb-0.5">Customer Instructions:</strong>
                   "{selectedOrder.customerNotes}"
                 </div>
@@ -510,15 +524,15 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
               {/* Clarification Notice (if active) */}
               {selectedOrder.clarificationNote && (
-                <div className="p-3 bg-[#ffe8d4] rounded-[8px] border border-[#dd5b00]/30 text-xs text-[#793400]">
+                <div className="p-3 bg-[#3c2b22] rounded-none border border-[#dd5b00]/30 text-xs text-[#bcbcbc]">
                   <strong className="block font-semibold mb-0.5">Active Shop Note:</strong>
                   "{selectedOrder.clarificationNote}"
                 </div>
               )}
 
-              <section aria-label="Uploaded files" className="rounded-[8px] border border-[#e5e3df] bg-white">
+              <section aria-label="Uploaded files" className="rounded-none border border-[#3d3d3d] bg-[#242424]">
                 <div className="flex items-center justify-between gap-2 px-3 py-2">
-                  <h4 className="text-xs font-semibold text-[#37352f]">
+                  <h4 className="text-xs font-semibold text-[#dedede]">
                     Uploaded files ({attachments.length})
                   </h4>
                   {!selectedOrder.isPurged && availableAttachments.length > 1 && (
@@ -533,11 +547,11 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     </Button>
                   )}
                 </div>
-                <ul aria-label="Order files" className="divide-y divide-[#e5e3df] border-t border-[#e5e3df]">
+                <ul aria-label="Order files" className="divide-y divide-[#3d3d3d] border-t border-[#3d3d3d]">
                   {attachments.map((file, index) => (
                     <li key={file.storagePath ?? index} className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
-                      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[#1a1a1a]">
-                        <FileText className="h-3.5 w-3.5 shrink-0 text-[#787671]" aria-hidden="true" />
+                      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[#ffffff]">
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-[#b0b0b0]" aria-hidden="true" />
                         <span className="min-w-0 break-all">{file.name}</span>
                       </span>
                       {!selectedOrder.isPurged && (
@@ -557,60 +571,60 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   ))}
                 </ul>
                 {!selectedOrder.attachments && / \(\+\d+ more docs\)$/.test(selectedOrder.fileName) && (
-                  <p className="px-3 pb-2 text-xs text-[#787671]">This older order is missing files. Ask the customer to resend the full set.</p>
+                  <p className="px-3 pb-2 text-xs text-[#b0b0b0]">This older order is missing files. Ask the customer to resend the full set.</p>
                 )}
               </section>
 
               {/* Document Specs Matrix */}
               <div className="space-y-2 text-xs">
-                <span className="font-bold uppercase tracking-wider text-[#787671] text-[10px] block">
+                <span className="font-bold uppercase tracking-wider text-[#b0b0b0] text-[10px] block">
                   Print Specifications
                 </span>
 
-                <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] space-y-1.5">
+                <div className="p-3 bg-[#1c1c1c] rounded-none border border-[#3d3d3d] space-y-1.5">
                   <div className="flex justify-between">
-                    <span className="text-[#787671]">Selected Range:</span>
-                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.customPageRange} ({selectedOrder.config.selectedPageCount} pgs)</span>
+                    <span className="text-[#b0b0b0]">Selected Range:</span>
+                    <span className="font-bold text-[#ffffff]">{selectedOrder.config.customPageRange} ({selectedOrder.config.selectedPageCount} pgs)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#787671]">Paper & Sides:</span>
-                    <span className="font-bold text-[#5645d4]">
+                    <span className="text-[#b0b0b0]">Paper & Sides:</span>
+                    <span className="font-bold text-[#ff8278]">
                       {selectedOrder.config.paperSize} • {selectedOrder.config.sides === 'duplex' ? 'Double-Sided (Duplex)' : 'Single-Sided'}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#787671]">Color Mode:</span>
-                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.colorMode.toUpperCase()}</span>
+                    <span className="text-[#b0b0b0]">Color Mode:</span>
+                    <span className="font-bold text-[#ffffff]">{selectedOrder.config.colorMode.toUpperCase()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#787671]">Physical Sheets:</span>
-                    <span className="font-bold text-[#1a1a1a]">{selectedOrder.config.sheetsNeeded} sheets</span>
+                    <span className="text-[#b0b0b0]">Physical Sheets:</span>
+                    <span className="font-bold text-[#ffffff]">{selectedOrder.config.sheetsNeeded} sheets</span>
                   </div>
                 </div>
               </div>
 
               {/* Price & Payment Breakdown */}
-              <div className="p-3 bg-[#f6f5f4] rounded-[8px] border border-[#e5e3df] flex items-center justify-between">
+              <div className="p-3 bg-[#1c1c1c] rounded-none border border-[#3d3d3d] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-[#787671]">Total Amount</span>
-                  <div className="text-xl font-extrabold text-[#0a1530]">
+                  <span className="text-[10px] uppercase font-bold text-[#b0b0b0]">Total Amount</span>
+                  <div className="text-xl font-extrabold text-[#ffffff]">
                     ₹{(selectedOrder.config.revisedAmount || selectedOrder.config.subtotal).toFixed(2)}
                   </div>
                   {selectedOrder.config.isRevisedQuote && (
-                    <span className="text-[10px] text-[#dd5b00] font-semibold">(Revised quote)</span>
+                    <span className="text-[10px] text-[#f3ba83] font-semibold">(Revised quote)</span>
                   )}
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10px] uppercase font-bold text-[#787671]">Payment Mode</span>
-                  <div className={`text-xs font-bold ${selectedOrder.paymentStatus === 'paid' ? 'text-[#1aae39]' : 'text-[#dd5b00]'}`}>
+                  <span className="text-[10px] uppercase font-bold text-[#b0b0b0]">Payment Mode</span>
+                  <div className={`text-xs font-bold ${selectedOrder.paymentStatus === 'paid' ? 'text-[#6ed5a3]' : 'text-[#f3ba83]'}`}>
                     {selectedOrder.paymentStatus === 'paid' ? 'PAID ONLINE [SANDBOX]' : 'PAY AT COUNTER'}
                   </div>
                 </div>
               </div>
 
               {/* Core Workflow Actions */}
-              <div className="space-y-2 pt-2 border-t border-[#e5e3df]">
+              <div className="space-y-2 pt-2 border-t border-[#3d3d3d]">
                 
                 <div className="flex">
                   <Button
@@ -626,7 +640,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 </div>
 
                 {selectedOrder.isPurged && (
-                  <p className="text-[11px] text-[#787671] text-center pt-1">
+                  <p className="text-[11px] text-[#b0b0b0] text-center pt-1">
                     The order files are unavailable. The receipt is still available.
                   </p>
                 )}
@@ -645,7 +659,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   )}
 
                   {selectedOrder.status === 'approved' && (
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#1aae39] bg-[#d9f3e1] px-3 py-1.5 rounded-[6px]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#6ed5a3] bg-[#163529] px-3 py-1.5 rounded-none">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>✓ Job Approved</span>
                     </div>
@@ -687,9 +701,9 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="text-xs text-[#5645d4]"
+                    className="text-xs text-[#ff8278]"
                     onClick={() => setOrderToViewBill(selectedOrder)}
-                    icon={<FileText className="w-3.5 h-3.5 text-[#5645d4]" />}
+                    icon={<FileText className="w-3.5 h-3.5 text-[#ff8278]" />}
                   >
                     View Bill (#INV-{selectedOrder.orderNumber})
                   </Button>
@@ -698,7 +712,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-[#dd5b00]"
+                    className="text-xs text-[#f3ba83]"
                     onClick={() => setOrderToClarify(selectedOrder)}
                     icon={<HelpCircle className="w-3.5 h-3.5" />}
                   >
@@ -710,7 +724,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-xs text-[#e03131]"
+                      className="text-xs text-[#ff8278]"
                       onClick={() => setOrderToReject(selectedOrder)}
                       icon={<XCircle className="w-3.5 h-3.5" />}
                     >
@@ -722,13 +736,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
               </div>
 
               {/* Status History Timeline */}
-              <div className="border-t border-[#e5e3df] pt-3">
-                <span className="text-[10px] uppercase font-bold text-[#787671] block mb-2">Activity Audit Log</span>
+              <div className="border-t border-[#3d3d3d] pt-3">
+                <span className="text-[10px] uppercase font-bold text-[#b0b0b0] block mb-2">Activity Audit Log</span>
                 <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
                   {selectedOrder.statusHistory.map((h, i) => (
-                    <div key={i} className="text-[11px] text-[#5d5b54] flex justify-between">
-                      <span className="font-semibold capitalize text-[#1a1a1a]">{h.status}:</span>
-                      <span className="text-[#a4a097]">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div key={i} className="text-[11px] text-[#bcbcbc] flex justify-between">
+                      <span className="font-semibold capitalize text-[#ffffff]">{h.status}:</span>
+                      <span className="text-[#969696]">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                   ))}
                 </div>
@@ -736,7 +750,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
             </Card>
           ) : (
-            <Card className="p-8 text-center text-[#787671] bg-white border-[#e5e3df]">
+            <Card className="p-8 text-center text-[#b0b0b0] bg-[#242424] border-[#3d3d3d]">
               Select an order from the queue to review details.
             </Card>
           )}
@@ -797,13 +811,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
       {/* Official Counter Bill Modal for Shopkeeper */}
       {orderToViewBill && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-[16px] max-w-xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
-            <div className="flex justify-between items-center pb-2 border-b border-[#e5e3df]">
-              <h3 className="font-bold text-sm text-[#0a1530]">Official Digital Counter Receipt</h3>
+          <div className="bg-[#242424] rounded-none max-w-xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-[#3d3d3d]">
+              <h3 className="font-bold text-sm text-[#ffffff]">Official Digital Counter Receipt</h3>
               <button
                 type="button"
                 onClick={() => setOrderToViewBill(null)}
-                className="text-[#787671] hover:text-[#1a1a1a] text-xs font-semibold p-1.5 cursor-pointer hover:bg-[#f0eeec] rounded"
+                className="text-[#b0b0b0] hover:text-[#ffffff] text-xs font-semibold p-1.5 cursor-pointer hover:bg-[#303030] rounded"
               >
                 ✕ Close
               </button>
@@ -818,8 +832,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
 
       {/* Floating Status Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-[#0a1530] text-white px-4 py-2.5 rounded-[10px] shadow-2xl border border-white/20 text-xs font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-[#1aae39]" />
+        <div className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 z-50 bg-[#181818] text-white px-4 py-2.5 rounded-none shadow-none border border-white/20 text-xs font-semibold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#6ed5a3]" />
           <span>{toastMessage}</span>
         </div>
       )}

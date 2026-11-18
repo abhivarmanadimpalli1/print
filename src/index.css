@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #5645d4;
-  --color-primary-pressed: #4534b3;
-  --color-primary-deep: #3a2a99;
+  --color-primary: #da291c;
+  --color-primary-pressed: #b01e0a;
+  --color-primary-deep: #9d2211;
   --color-on-primary: #ffffff;
 
   --color-brand-navy: #0a1530;
@@ -108,13 +108,13 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
-  background-color: var(--color-surface);
-  color: var(--color-charcoal);
+  background-color: #181818;
+  color: #dedede;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -159,4 +159,83 @@ body {
   .no-print {
     display: none !important;
   }
+}
+
+/* QuickPrint / editorial precision, from the supplied Ferrari design reference. */
+:root { --qp-canvas: #181818; --qp-panel: #242424; --qp-line: #3d3d3d; --qp-accent: #da291c; }
+html { scroll-padding-top: 112px; }
+body { min-width: 320px; font-size: 14px; }
+#root, .app-shell, main { min-width: 0; }
+::selection { background: #da291c; color: white; }
+.site-header { position: sticky; top: 0; z-index: 30; background: #181818f5; border-bottom: 1px solid #3d3d3d; backdrop-filter: blur(16px); }
+.header-inner { max-width: 1280px; margin: auto; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.store-brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.brand-mark { width: 44px; height: 44px; border: 1px solid #606060; display: grid; place-items: center; flex-shrink: 0; color: white; }
+.brand-copy { min-width: 0; }
+.brand-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.brand-title { font-weight: 500; font-size: 16px; letter-spacing: -.3px; color: white; overflow-wrap: anywhere; }
+.brand-subtitle { margin-top: 4px; color: #b0b0b0; font-size: 11px; line-height: 1.5; }
+.store-status { color: #ff8278; font-size: 9px; letter-spacing: 1px; font-weight: 600; }
+.store-status.is-open { color: #6ed5a3; }
+.header-phone, .header-back { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1px solid #606060; color: white; font-size: 12px; flex-shrink: 0; }
+.header-phone:hover, .header-back:hover { background: #303030; }
+.counter-controls, .counter-nav { display: flex; align-items: center; gap: 4px; }
+.counter-nav button, .counter-nav a, .header-logout { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 12px; font-size: 12px; color: #bcbcbc; cursor: pointer; }
+.counter-nav [aria-current=page] { color: white; border-bottom: 2px solid #da291c; }
+.queue-count { background: #da291c; padding: 2px 6px; font-size: 10px; color: white; }
+.order-intro { padding: 16px 0 40px; max-width: 840px; }
+.eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 2px; color: #b0b0b0; margin-bottom: 16px; }
+.order-intro h1 { font-size: clamp(40px, 5.3vw, 72px); font-weight: 500; color: white; letter-spacing: -.04em; line-height: 1.08; }
+.order-intro > p:not(.eyebrow), .workspace-intro > p:not(.eyebrow) { color: #b0b0b0; margin-top: 16px; line-height: 1.65; font-size: 14px; max-width: 460px; }
+.intro-meta { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 32px; font-size: 10px; letter-spacing: 1px; color: #b0b0b0; }
+.intro-meta span:first-child { color: white; }
+.workspace-intro { padding: 16px 0 24px; }
+.workspace-intro h1 { color: white; font-size: clamp(30px,4vw,48px); font-weight: 500; line-height: 1.1; letter-spacing: -.03em; }
+.qp-card { min-width: 0; }
+.qp-button { letter-spacing: .6px; font-size: 11px; line-height: 1.4; text-transform: uppercase; border-radius: 0; height: auto; padding-top: 12px; padding-bottom: 12px; }
+h1, h2, h3 { text-wrap: balance; }
+.app-shell h1, .app-shell h2, .app-shell h3 { font-weight: 500; }
+.pricing-panel { background: #fff; color: #181818; border-top: 3px solid #da291c; }
+.pricing-panel [class*="text-"] { color: #303030; }
+.pricing-panel [class*="text-3xl"] { color: #181818; font-weight: 500; font-size: 36px; letter-spacing: -1px; }
+.pricing-panel [class*="border-t"] { border-color: #d2d2d2; }
+.app-shell input:not([type=checkbox]):not([type=radio]):not([type=file]), .app-shell select, .app-shell textarea { color-scheme: dark; min-height: 48px; border-radius: 4px; }
+.app-shell input::placeholder, .app-shell textarea::placeholder { color: #969696; }
+.app-shell button, .app-shell a, .app-shell input, .app-shell select { touch-action: manipulation; }
+.app-shell button { cursor: pointer; }
+.app-shell :focus-visible { outline: 2px solid #fff200; outline-offset: 4px; }
+.app-shell button:disabled { cursor: not-allowed; }
+.app-shell footer { background: #181818; }
+@media (max-width: 767px) {
+  .header-inner { padding: 16px; gap: 12px; flex-wrap: wrap; }
+  .store-brand { flex: 1; gap: 12px; }
+  .brand-title { font-size: 14px; }
+  .brand-mark { width: 40px; height: 40px; }
+  .brand-subtitle { font-size: 10px; }
+  .header-phone { width: 44px; padding: 0; }
+  .header-phone span { display: none; }
+  .counter-controls { width: 100%; border-top: 1px solid #3d3d3d; padding-top: 8px; justify-content: space-between; }
+  .counter-nav { flex: 1; min-width: 0; gap: 0; justify-content: space-between; }
+  .counter-nav button, .counter-nav a { padding: 0 6px; gap: 6px; }
+  .header-logout { padding: 0; width: 36px; flex-shrink: 0; }
+  .order-intro { padding: 8px 0 32px; }
+  .intro-meta { gap: 16px; font-size: 9px; }
+  .qp-card { padding: 20px; }
+  .qp-card.p-0 { padding: 0; }
+  .app-shell input:not([type=checkbox]):not([type=radio]):not([type=file]), .app-shell select, .app-shell textarea { font-size: 16px; }
+  .app-shell button:not(.qp-button), .app-shell a[title] { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Keep grid children shrinkable even with long filenames and narrow selects. */
+.app-shell .grid > *, .app-shell select { min-width: 0; max-width: 100%; }
+@media (max-width: 1023px) {
+  .shop-directory, .shop-directory tbody, .shop-directory tr, .shop-directory td { display: block; width: 100%; }
+  .shop-directory thead { display: none; }
+  .shop-directory tr { padding: 20px; border-bottom: 1px solid #606060; }
+  .shop-directory td { padding: 12px 0; text-align: left; overflow-wrap: anywhere; }
+  .shop-directory td::before { content: attr(data-label); display: block; color: #b0b0b0; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; }
+  .shop-directory td:last-child > div { justify-content: flex-start; flex-wrap: wrap; }
 }

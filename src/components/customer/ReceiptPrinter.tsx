@@ -103,7 +103,7 @@ const statusLabels: Record<ReceiptPrinterStage, ReactNode> = {
 };
 
 const machineClassName =
-  "relative isolate w-full overflow-hidden rounded-[var(--printer-radius)] border border-grayscale-12 bg-[#1a2238] p-[var(--printer-inset)] pb-8 shadow-[0_20px_36px_-20px_rgba(0,0,0,0.5),0_6px_14px_-8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(0,0,0,0.5)] [--printer-inner-radius:calc(var(--printer-radius)_-_var(--printer-inset))] [--printer-inset:0.75rem] [--printer-radius:1.5rem] before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:bg-[url('/textures/plastic-noise.svg')] before:bg-[length:180px_180px] before:bg-repeat before:opacity-30 before:mix-blend-multiply before:content-['']";
+  "relative isolate w-full overflow-hidden rounded-[var(--printer-radius)] border border-grayscale-12 bg-[#303030] p-[var(--printer-inset)] pb-8 shadow-[0_20px_36px_-20px_rgba(0,0,0,0.5),0_6px_14px_-8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15),inset_0_-1px_0_rgba(0,0,0,0.5)] [--printer-inner-radius:calc(var(--printer-radius)_-_var(--printer-inset))] [--printer-inset:0.75rem] [--printer-radius:1.5rem] before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:bg-[url('/textures/plastic-noise.svg')] before:bg-[length:180px_180px] before:bg-repeat before:opacity-30 before:mix-blend-multiply before:content-['']";
 
 function useReceiptPrinter(component: string) {
   const context = useContext(ReceiptPrinterContext);
@@ -191,7 +191,7 @@ function ReceiptPrinterScreen({
   return (
     <div
       className={cn(
-        "relative z-10 isolate overflow-hidden rounded-[var(--printer-inner-radius)] border border-[#2b3553] bg-[#0c1222] p-4 text-grayscale-1 shadow-inner shadow-black/80",
+        "relative z-10 isolate overflow-hidden rounded-[var(--printer-inner-radius)] border border-[#404040] bg-[#181818] p-4 text-grayscale-1 shadow-inner shadow-black/80",
         className,
       )}
       {...props}

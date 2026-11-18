@@ -154,11 +154,11 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   if (isSearchingCloud) {
     return (
       <div className="max-w-md mx-auto py-16 px-4 text-center">
-        <Card className="p-8 space-y-4 bg-white border border-[#e5e3df] rounded-[12px] shadow-sm">
-          <div className="w-9 h-9 border-3 border-[#5645d4] border-t-transparent rounded-full animate-spin mx-auto" />
-          <h2 className="text-base font-bold text-[#1a1a1a]">Checking City Cloud Database...</h2>
-          <p className="text-xs text-[#787671]">
-            Retrieving live counter status and generated bill for <code className="font-mono font-bold text-[#5645d4]">{activeId}</code>
+        <Card className="p-8 space-y-4 bg-[#242424] border border-[#3d3d3d] rounded-none shadow-none">
+          <div className="w-9 h-9 border-3 border-[#da291c] border-t-transparent rounded-full animate-spin mx-auto" />
+          <h2 className="text-base font-bold text-[#ffffff]">Checking City Cloud Database...</h2>
+          <p className="text-xs text-[#b0b0b0]">
+            Retrieving live counter status and generated bill for <code className="font-mono font-bold text-[#ff8278]">{activeId}</code>
           </p>
         </Card>
       </div>
@@ -169,21 +169,21 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   if (!order) {
     return (
       <div className="max-w-md mx-auto py-12 px-4 space-y-4">
-        <Card className="p-8 space-y-5 text-center bg-white border border-[#e5e3df] shadow-sm">
-          <div className="w-12 h-12 bg-[#ffe8d4] text-[#dd5b00] rounded-full flex items-center justify-center mx-auto">
+        <Card className="p-8 space-y-5 text-center bg-[#242424] border border-[#3d3d3d] shadow-none">
+          <div className="w-12 h-12 bg-[#3c2b22] text-[#f3ba83] rounded-full flex items-center justify-center mx-auto">
             <AlertTriangle className="w-6 h-6" />
           </div>
 
           <div>
-            <h2 className="text-lg font-bold text-[#1a1a1a]">Order Not Found</h2>
-            <p className="text-xs text-[#787671] mt-1">
-              We couldn't automatically locate an order matching <code className="font-mono font-semibold text-[#1a1a1a]">{activeId}</code>.
+            <h2 className="text-lg font-bold text-[#ffffff]">Order Not Found</h2>
+            <p className="text-xs text-[#b0b0b0] mt-1">
+              We couldn't automatically locate an order matching <code className="font-mono font-semibold text-[#ffffff]">{activeId}</code>.
             </p>
           </div>
 
           {/* Interactive Search Box */}
           <div className="pt-2 text-left space-y-2">
-            <label className="text-xs font-semibold text-[#37352f] block">
+            <label className="text-xs font-semibold text-[#dedede] block">
               Search by Order Number or Mobile:
             </label>
             <div className="flex gap-2">
@@ -193,7 +193,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder(searchQuery)}
-                className="flex-1 px-3 py-2 text-xs border border-[#c8c4be] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#5645d4] font-mono"
+                className="flex-1 px-3 py-2 text-xs border border-[#606060] rounded-none focus:outline-none focus:ring-2 focus:ring-[#da291c] font-mono"
               />
               <Button
                 variant="primary"
@@ -205,11 +205,11 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
               </Button>
             </div>
             {searchError && (
-              <p className="text-xs text-[#e03131] pt-1">{searchError}</p>
+              <p className="text-xs text-[#ff8278] pt-1">{searchError}</p>
             )}
           </div>
 
-          <div className="pt-2 border-t border-[#e5e3df]">
+          <div className="pt-2 border-t border-[#3d3d3d]">
             <Button variant="secondary" onClick={onBackToOrder} className="w-full">
               Back to Print Ordering
             </Button>
@@ -239,7 +239,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
         <button
           type="button"
           onClick={onBackToOrder}
-          className="flex items-center gap-1 text-xs font-semibold text-[#5645d4] hover:underline cursor-pointer"
+          className="flex items-center gap-1 text-xs font-semibold text-[#ff8278] hover:underline cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
           <span>New Print Order</span>
@@ -247,21 +247,21 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
 
         {/* Live sync pulse & refresh */}
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-[#787671]">Cloud Live</span>
+          <span className="text-[11px] text-[#b0b0b0]">Cloud Live</span>
           <span className="w-2 h-2 rounded-full bg-[#1aae39] animate-pulse" />
         </div>
       </div>
 
       {/* Quick "Track Another Order #" Search Bar */}
-      <div className="no-print bg-white p-3 rounded-[10px] border border-[#e5e3df] shadow-xs flex items-center gap-2">
-        <Search className="w-4 h-4 text-[#787671] shrink-0" />
+      <div className="no-print bg-[#242424] p-3 rounded-none border border-[#3d3d3d] shadow-none flex items-center gap-2">
+        <Search className="w-4 h-4 text-[#b0b0b0] shrink-0" />
         <input
           type="text"
           placeholder="Track another order # (e.g. 1046)"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder(searchQuery)}
-          className="flex-1 text-xs bg-transparent border-none focus:outline-none placeholder:text-[#a4a097] font-mono"
+          className="flex-1 text-xs bg-transparent border-none focus:outline-none placeholder:text-[#969696] font-mono"
         />
         <Button
           variant="secondary"
@@ -275,30 +275,30 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
       </div>
 
       {/* View Switcher: Digital Counter Bill vs Pipeline Status */}
-      <div className="no-print flex bg-[#f0eeec] p-1 rounded-[10px] border border-[#e5e3df]">
+      <div className="no-print flex bg-[#303030] p-1 rounded-none border border-[#3d3d3d]">
         <button
           type="button"
           onClick={() => setActiveTab('bill')}
-          className={`flex-1 py-2 text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-2 text-xs font-bold rounded-none transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === 'bill'
-              ? 'bg-white text-[#0a1530] shadow-xs'
-              : 'text-[#787671] hover:text-[#1a1a1a]'
+              ? 'bg-[#242424] text-[#ffffff] shadow-none'
+              : 'text-[#b0b0b0] hover:text-[#ffffff]'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5 text-[#5645d4]" />
+          <Sparkles className="w-3.5 h-3.5 text-[#ff8278]" />
           <span>Official Counter Bill & Token</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('tracker')}
-          className={`flex-1 py-2 text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-2 text-xs font-bold rounded-none transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === 'tracker'
-              ? 'bg-white text-[#0a1530] shadow-xs'
-              : 'text-[#787671] hover:text-[#1a1a1a]'
+              ? 'bg-[#242424] text-[#ffffff] shadow-none'
+              : 'text-[#b0b0b0] hover:text-[#ffffff]'
           }`}
         >
-          <Clock className="w-3.5 h-3.5 text-[#dd5b00]" />
+          <Clock className="w-3.5 h-3.5 text-[#f3ba83]" />
           <span>Live Queue Progress</span>
         </button>
       </div>
@@ -317,45 +317,45 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
         <div className="space-y-4">
           
           {/* Hero Status Card */}
-          <Card className="bg-white border-[#e5e3df] p-6 text-center space-y-3 shadow-xs">
+          <Card className="bg-[#242424] border-[#3d3d3d] p-6 text-center space-y-3 shadow-none">
             <div className="inline-block">
               <Badge status={order.status} size="md" />
             </div>
 
             <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-[#787671]">Queue Token</span>
-              <div className="text-4xl sm:text-5xl font-black text-[#5645d4] tracking-tight font-mono mt-0.5">
+              <span className="text-xs font-mono uppercase tracking-wider text-[#b0b0b0]">Queue Token</span>
+              <div className="text-4xl sm:text-5xl font-black text-[#ff8278] tracking-tight font-mono mt-0.5">
                 #{order.orderNumber}
               </div>
-              <p className="text-xs text-[#5d5b54] font-mono mt-0.5">Order ID: {order.id}</p>
+              <p className="text-xs text-[#bcbcbc] font-mono mt-0.5">Order ID: {order.id}</p>
             </div>
 
             <div className="pt-2">
               {order.status === 'ready' ? (
-                <div className="p-3 bg-[#d9f3e1] rounded-[8px] text-[#1aae39] font-bold text-sm">
+                <div className="p-3 bg-[#163529] rounded-none text-[#6ed5a3] font-bold text-sm">
                   🎉 Your print is ready! Please collect it from the bookstore counter tray.
                 </div>
               ) : order.status === 'printing' ? (
-                <div className="p-3 bg-[#ffe8d4] rounded-[8px] text-[#dd5b00] font-bold text-sm flex items-center justify-center gap-2">
+                <div className="p-3 bg-[#3c2b22] rounded-none text-[#f3ba83] font-bold text-sm flex items-center justify-center gap-2">
                   <Printer className="w-4 h-4 animate-bounce" />
                   Your document is actively feeding through the shop's printer.
                 </div>
               ) : order.status === 'approved' ? (
-                <div className="p-3 bg-[#f0edfa] rounded-[8px] text-[#5645d4] font-bold text-sm flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#5645d4]" />
+                <div className="p-3 bg-[#303030] rounded-none text-[#ff8278] font-bold text-sm flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-[#ff8278]" />
                   Job Approved! Queued to print next at counter.
                 </div>
               ) : order.status === 'review' ? (
-                <div className="p-3 bg-[#ffe8d4] rounded-[8px] text-[#dd5b00] text-xs font-medium">
+                <div className="p-3 bg-[#3c2b22] rounded-none text-[#f3ba83] text-xs font-medium">
                   ⚠️ Shopkeeper is reviewing your document layout.
                 </div>
               ) : order.status === 'cancelled' ? (
-                <div className="p-3 bg-[#fde0ec] rounded-[8px] text-[#e03131] text-xs font-semibold">
+                <div className="p-3 bg-[#402321] rounded-none text-[#ff8278] text-xs font-semibold">
                   ❌ Order Cancelled or Rejected: {order.rejectionReason || 'Contact counter for details.'}
                 </div>
               ) : (
-                <p className="text-xs text-[#787671]">
-                  Estimated counter wait: <strong className="text-[#1a1a1a]">~2 to 5 minutes</strong>
+                <p className="text-xs text-[#b0b0b0]">
+                  Estimated counter wait: <strong className="text-[#ffffff]">~2 to 5 minutes</strong>
                 </p>
               )}
             </div>
@@ -365,18 +365,18 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
           {order.clarificationNote && (
             <Card tint="peach" className="space-y-2 border-none">
               <div className="flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-[#dd5b00]" />
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[#793400]">
+                <HelpCircle className="w-4 h-4 text-[#f3ba83]" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#bcbcbc]">
                   Note from Bookstore Owner
                 </h4>
               </div>
-              <p className="text-xs text-[#37352f] leading-relaxed">
+              <p className="text-xs text-[#dedede] leading-relaxed">
                 "{order.clarificationNote}"
               </p>
               {order.config.isRevisedQuote && order.config.revisedAmount && (
-                <div className="mt-2 p-2 bg-white/80 rounded-[6px] text-xs flex justify-between items-center">
+                <div className="mt-2 p-2 bg-[#303030] rounded-none text-xs flex justify-between items-center">
                   <span>Revised Total:</span>
-                  <span className="font-bold text-sm text-[#0a1530]">₹{order.config.revisedAmount.toFixed(2)}</span>
+                  <span className="font-bold text-sm text-[#ffffff]">₹{order.config.revisedAmount.toFixed(2)}</span>
                 </div>
               )}
             </Card>
@@ -384,8 +384,8 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
 
           {/* Progress Timeline */}
           {!isCancelled && (
-            <Card className="bg-white border-[#e5e3df] p-5 shadow-xs">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#5d5b54] mb-4">
+            <Card className="bg-[#242424] border-[#3d3d3d] p-5 shadow-none">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#bcbcbc] mb-4">
                 Counter Print Pipeline
               </h3>
 
@@ -399,7 +399,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
                       {idx < steps.length - 1 && (
                         <div
                           className={`absolute left-3 top-6 bottom-0 w-0.5 -mb-4 ${
-                            currentStepIndex > idx ? 'bg-[#5645d4]' : 'bg-[#e5e3df]'
+                            currentStepIndex > idx ? 'bg-[#da291c]' : 'bg-[#3d3d3d]'
                           }`}
                         />
                       )}
@@ -407,10 +407,10 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
                       <div
                         className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 z-10 text-[10px] font-bold ${
                           isCurrent
-                            ? 'bg-[#5645d4] text-white ring-4 ring-[#e6e0f5]'
+                            ? 'bg-[#da291c] text-white ring-4 ring-[#303030]'
                             : isPast
-                            ? 'bg-[#5645d4] text-white'
-                            : 'bg-[#f0eeec] text-[#a4a097]'
+                            ? 'bg-[#da291c] text-white'
+                            : 'bg-[#303030] text-[#969696]'
                         }`}
                       >
                         {isPast && !isCurrent ? (
@@ -424,15 +424,15 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
                         <p
                           className={`text-xs font-semibold ${
                             isCurrent
-                              ? 'text-[#5645d4]'
+                              ? 'text-[#ff8278]'
                               : isPast
-                              ? 'text-[#1a1a1a]'
-                              : 'text-[#a4a097]'
+                              ? 'text-[#ffffff]'
+                              : 'text-[#969696]'
                           }`}
                         >
                           {s.label}
                         </p>
-                        <p className="text-[11px] text-[#787671]">{s.desc}</p>
+                        <p className="text-[11px] text-[#b0b0b0]">{s.desc}</p>
                       </div>
                     </div>
                   );
@@ -446,7 +446,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
             variant="secondary"
             onClick={() => setActiveTab('bill')}
             className="w-full justify-center text-xs"
-            icon={<Sparkles className="w-3.5 h-3.5 text-[#5645d4]" />}
+            icon={<Sparkles className="w-3.5 h-3.5 text-[#ff8278]" />}
           >
             View & Print Official Counter Bill (#INV-{order.orderNumber})
           </Button>
