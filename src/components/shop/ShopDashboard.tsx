@@ -22,10 +22,10 @@ import { DigitalCounterBill } from '../customer/DigitalCounterBill';
 import {
   getOrders,
   confirmUpiPayment,
+  confirmCounterPayment,
   updateOrderStatus,
   rejectOrder,
   requestClarification,
-  reviseOrderQuote,
   markOrderDownloaded,
   markOrderPrinted,
   purgeOrderDocument,
@@ -33,7 +33,6 @@ import {
   saveOrderToLocal,
 } from '../../lib/store';
 import { listenToStoreOrdersFromFirestore } from '../../lib/firebase';
-import { listenToCloud } from '../../lib/cloudSync';
 import { getOrderAttachments, saveAttachment, type DownloadableAttachment } from '../../lib/orderAttachments';
 import type { Order, OrderStatus, Shop } from '../../types';
 import { getUpiPaymentIssue, paymentLabel } from '../../lib/upi';
@@ -128,21 +127,9 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
       setOrders(getOrders(shop.id));
     });
 
-    // 3. Real-time Cloud SSE listener
-    const unsubCloud = listenToCloud(shop.id, (payload) => {
-      if (payload.action === 'CREATE_ORDER' && payload.order) {
-        saveOrderToLocal(payload.order);
-        setOrders(getOrders(shop.id));
-        showToast(`🔔 New Order #${payload.order.orderNumber} received from ${payload.order.customerName}!`);
-      } else if (payload.action === 'UPDATE_STATUS' && payload.orderId) {
-        setOrders(getOrders(shop.id));
-      }
-    });
-
     return () => {
       unsubStore();
       unsubFirestore();
-      unsubCloud();
     };
   }, [shop.id]);
 
@@ -177,22 +164,13 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     return true;
   });
 
-  const handleStatusChange = (orderId: string, status: OrderStatus, note?: string) => {
-    const updated = updateOrderStatus(orderId, status, note);
-    const refreshed = getOrders(shop.id);
-    setOrders(refreshed);
-    const target = refreshed.find(o => o.id === orderId) || updated;
-    const num = target ? `#${target.orderNumber}` : orderId;
-    const statusLabels: Record<OrderStatus, string> = {
-      new: 'New in Queue',
-      review: 'Under Review',
-      approved: 'Approved for Printing',
-      printing: 'Printing at Counter',
-      ready: 'Ready for Pickup',
-      completed: 'Completed',
-      cancelled: 'Cancelled / Rejected',
-    };
-    showToast(`Order ${num} updated: ${statusLabels[status] || status}`);
+  const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+  const handleStatusChange = async (orderId: string, status: OrderStatus, note?: string) => {
+    if (isUpdatingOrder) return;
+    setIsUpdatingOrder(true);
+    try { const updated = await updateOrderStatus(orderId, status, note); setOrders(previous => previous.map(order => order.id === updated.id ? updated : order)); showToast(`Order #${updated.orderNumber}: ${status}.`); }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not save the order status. Try again.'); }
+    finally { setIsUpdatingOrder(false); }
   };
 
   const handleDownloadFiles = async (order: Order, files: DownloadableAttachment[]) => {
@@ -204,7 +182,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
       if (failures.length) {
         showToast(`Could not download ${failures.map(file => file.name).join(', ')}. Retry from the file list.`);
       } else {
-        markOrderDownloaded(order.id);
+        try { await markOrderDownloaded(order.id); } catch { showToast('The download started, but its cleanup timer could not be saved.'); }
       }
     } finally {
       setDownloadingOrderId(null);
@@ -223,10 +201,10 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   };
 
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
-  const handleConfirmPayment = async (orderId: string) => {
+  const handleConfirmPayment = async (orderId: string, atCounter = false) => {
     if (isConfirmingPayment) return;
     setIsConfirmingPayment(true);
-    try { const updated = await confirmUpiPayment(orderId); setOrders(previous => previous.map(order => order.id === updated.id ? updated : order)); showToast('Payment marked received by the shop.'); }
+    try { const updated = await (atCounter ? confirmCounterPayment(orderId) : confirmUpiPayment(orderId)); setOrders(previous => previous.map(order => order.id === updated.id ? updated : order)); showToast('Payment marked received by the shop.'); }
     catch (error) { showToast(error instanceof Error ? error.message : 'Could not confirm payment.'); }
     finally { setIsConfirmingPayment(false); }
   };
@@ -244,7 +222,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
   const countReady = orders.filter(o => o.status === 'ready').length;
   const totalRevenue = orders
     .filter(o => o.status !== 'cancelled')
-    .reduce((sum, o) => sum + (o.config.revisedAmount || o.config.subtotal), 0);
+    .reduce((sum, o) => sum + (o.config.revisedAmount ?? o.config.subtotal), 0);
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6">
@@ -389,7 +367,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     
                     {/* Order Reference & Customer */}
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-none bg-[#1c1c1c] border border-[#3d3d3d] flex flex-col items-center justify-center shrink-0">
+                      <div className="w-16 h-11 rounded-none bg-[#1c1c1c] border border-[#3d3d3d] flex flex-col items-center justify-center shrink-0">
                         <span className="text-[10px] uppercase font-mono font-bold text-[#b0b0b0]">Queue</span>
                         <span className="text-xs font-mono font-bold text-[#ffffff]">#{order.orderNumber}</span>
                       </div>
@@ -431,7 +409,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     <div className="text-right shrink-0 space-y-1">
                       <Badge status={order.status} size="sm" />
                       <div className="text-base font-bold text-[#ffffff]">
-                        ₹{(order.config.revisedAmount || order.config.subtotal).toFixed(2)}
+                        ₹{(order.config.revisedAmount ?? order.config.subtotal).toFixed(2)}
                       </div>
                       <span className={`text-[10px] font-medium block ${
                         order.paymentStatus === 'paid' ? 'text-[#6ed5a3]' : 'text-[#f3ba83]'
@@ -500,14 +478,14 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                       {selectedOrder.isPurged
                         ? 'PDF Cleared from Database'
                         : selectedOrder.purgeAt
-                        ? '10-Minute Auto-Purge Armed'
-                        : '10-Minute Auto-Purge Ready'}
+                        ? 'File cleanup timer active'
+                        : 'File cleanup ready'}
                     </strong>
                     <span className="text-[11px]">
                       {selectedOrder.isPurged
                         ? 'Document binary safely deleted to clear storage.'
                         : selectedOrder.purgeAt
-                        ? 'The signed-in counter removes files after the 10-minute countdown.'
+                        ? 'Cleanup runs while this counter is signed in and open.'
                         : 'Triggered automatically when downloaded or printed.'}
                     </span>
                   </div>
@@ -558,6 +536,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     </Button>
                   )}
                 </div>
+                {availableAttachments.length > 1 && <p className="px-3 pb-3 text-[11px] text-[#bcbcbc]">Allow multiple downloads if your browser asks. You can also download each original separately.</p>}
                 <ul aria-label="Order files" className="divide-y divide-[#3d3d3d] border-t border-[#3d3d3d]">
                   {attachments.map((file, index) => (
                     <li key={file.storagePath ?? index} className="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5">
@@ -619,7 +598,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 <div>
                   <span className="text-[10px] uppercase font-bold text-[#b0b0b0]">Total Amount</span>
                   <div className="text-xl font-extrabold text-[#ffffff]">
-                    ₹{(selectedOrder.config.revisedAmount || selectedOrder.config.subtotal).toFixed(2)}
+                    ₹{(selectedOrder.config.revisedAmount ?? selectedOrder.config.subtotal).toFixed(2)}
                   </div>
                   {selectedOrder.config.isRevisedQuote && (
                     <span className="text-[10px] text-[#f3ba83] font-semibold">(Revised quote)</span>
@@ -633,6 +612,8 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                   </div>
                 </div>
               </div>
+
+              {selectedOrder.paymentMode === 'counter' && selectedOrder.paymentStatus !== 'paid' && <section className="border border-[#3d3d3d] p-4 space-y-3 text-xs"><p className="text-[#bcbcbc]">After receiving cash or confirming the incoming UPI payment at the counter, record it here.</p><Button variant="secondary" className="w-full" disabled={isConfirmingPayment || selectedOrder.status === 'cancelled'} onClick={() => void handleConfirmPayment(selectedOrder.id, true)}>{isConfirmingPayment ? 'Saving…' : 'Record counter payment received'}</Button></section>}
 
               {selectedOrder.upiPayment && <section aria-label="UPI payment details" className="border border-[#3d3d3d] p-4 space-y-3 text-xs">
                 <h3 className="text-white">UPI payment details</h3>
@@ -653,7 +634,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                     size="md"
                     onClick={() => setOrderToPrint(selectedOrder)}
                     icon={<Printer className="w-4 h-4" />}
-                    disabled={selectedOrder.status === 'cancelled' || selectedOrder.isPurged || !availableAttachments.length}
+                    disabled={isUpdatingOrder || selectedOrder.status === 'cancelled' || selectedOrder.isPurged || !availableAttachments.length}
                   >
                     {selectedOrder.isPurged ? 'PDF Purged' : 'Print via Browser'}
                   </Button>
@@ -802,13 +783,10 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
       {orderToClarify && (
         <ClarifyOrderModal
           orderNumber={orderToClarify.orderNumber}
-          currentAmount={orderToClarify.config.revisedAmount || orderToClarify.config.subtotal}
+          currentAmount={orderToClarify.config.revisedAmount ?? orderToClarify.config.subtotal}
           onClose={() => setOrderToClarify(null)}
-          onConfirm={(note, revisedAmount) => {
-            if (revisedAmount !== undefined) {
-              reviseOrderQuote(orderToClarify.id, revisedAmount, note);
-            }
-            requestClarification(orderToClarify.id, note);
+          onConfirm={async (note, revisedAmount) => {
+            await requestClarification(orderToClarify.id, note, revisedAmount);
             setOrderToClarify(null);
           }}
         />
@@ -819,12 +797,11 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
         <PrintHandoffModal
           order={orderToPrint}
           onClose={() => setOrderToPrint(null)}
-          onConfirmPrint={() => {
-            markOrderPrinted(orderToPrint.id);
-            const refreshed = getOrders(shop.id);
-            setOrders(refreshed);
+          onConfirmPrint={async () => {
+            const updated = await markOrderPrinted(orderToPrint.id);
+            setOrders(previous => previous.map(order => order.id === updated.id ? updated : order));
             setOrderToPrint(null);
-            showToast(`🖨️ Order #${orderToPrint.orderNumber} sent to printer! 10m auto-purge active.`);
+            showToast(`Order #${updated.orderNumber} marked as printing.`);
           }}
         />
       )}

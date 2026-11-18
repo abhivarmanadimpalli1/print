@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Printer, AlertCircle, Cpu, X } from 'lucide-react';
+import { Printer, AlertCircle, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import type { Order } from '../../types';
 import { getAttachmentBlob, getOrderAttachments } from '../../lib/orderAttachments';
 
 interface PrintHandoffModalProps {
   order: Order;
-  onConfirmPrint: () => void;
+  onConfirmPrint: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -17,8 +17,10 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const [hasOpenedFile, setHasOpenedFile] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [fileIndex, setFileIndex] = useState(0);
-  const files = getOrderAttachments(order).filter(file => file.storagePath || file.legacyUrl);
+  const files = getOrderAttachments(order).filter(file => (file.storagePath || file.legacyUrl) && file.printPageCount !== 0);
   const attachment = files[fileIndex];
 
   const triggerBrowserPrint = async () => {
@@ -38,16 +40,10 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
       const url = URL.createObjectURL(blob);
       printWindow.location.href = url;
       printWindow.focus();
-      setTimeout(() => {
-        try {
-          printWindow.print();
-        } catch {
-          // The browser may require opening the print dialog manually.
-        } finally {
-          URL.revokeObjectURL(url);
-        }
+      const cleanup = setInterval(() => {
+        if (printWindow.closed) { URL.revokeObjectURL(url); clearInterval(cleanup); }
       }, 1000);
-      onConfirmPrint();
+      setHasOpenedFile(true);
     } catch {
       printWindow.close();
       setError('Could not open the original file. Try downloading it from the order.');
@@ -58,7 +54,7 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-lg w-full overflow-hidden">
+      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-lg w-full max-h-[90dvh] overflow-y-auto">
         
         {/* Header */}
         <div className="bg-[#181818] text-white p-4 flex items-center justify-between">
@@ -95,37 +91,17 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
                 {order.config.colorMode.toUpperCase()} • {order.config.sides === 'duplex' ? 'Duplex (Two-sided)' : 'Single-sided'} • {order.config.paperSize}
               </span>
             </div>
+            <div className="flex flex-wrap justify-between gap-2"><span className="text-[#b0b0b0]">Pages in this file:</span><strong className="text-white">{attachment?.printPageRange || order.config.customPageRange}</strong></div>
             <div className="flex justify-between">
               <span className="text-[#b0b0b0]">Sheets Required:</span>
               <span className="font-semibold text-[#ffffff]">{order.config.sheetsNeeded} sheets ({order.config.copies} copies)</span>
             </div>
           </div>
 
-          {/* Browser Sandbox Architectural Notice */}
-          <div className="p-3.5 bg-[#243239] border border-[#0075de]/30 rounded-none space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-[#8ccce9]">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>Browser Printing Boundary & Integration</span>
-            </div>
-            <p className="text-[11px] text-[#bcbcbc] leading-relaxed">
-              Standard web browsers operate inside a security sandbox and <strong>cannot silently bypass the OS print dialog</strong> or force specific tray/duplex hardware commands without user confirmation.
-            </p>
-            <p className="text-[11px] text-[#bcbcbc] leading-relaxed">
-              Clicking <strong>"Launch Browser Print Dialog"</strong> below will open the document and show your computer's native system print window with the requested settings.
-            </p>
-          </div>
-
-          {/* Integration boundary for native desktop helper */}
-          <div className="p-3 bg-[#303030] border border-[#3d3d3d] rounded-none flex items-start gap-2.5">
-            <Cpu className="w-4 h-4 text-[#f3ba83] shrink-0 mt-0.5" />
-            <div className="text-[11px] text-[#f3ba83]">
-              <strong className="block font-semibold">Future Hardware Integration:</strong>
-              For zero-click automated direct printing, run the companion desktop print daemon (<code className="font-mono bg-[#303030] px-1 rounded">localhost:7890/spool</code>) to interface directly with CUPS or Windows Spooler.
-            </div>
-          </div>
+          <div className="p-3 border border-[#3d3d3d] space-y-2 text-xs text-[#bcbcbc]"><div className="flex items-center gap-2 text-white"><AlertCircle size={16} />Print the original files</div><p>Open each file, then use your browser’s Print command. Select the requested paper size, color, sides, copies and page range in the printer dialog.</p><p>After starting the print job, mark the order as printing below. Opening a file does not confirm that the printer printed it.</p></div>
 
           {/* Actions */}
-          {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
+          {error && <p role="alert" className="text-xs text-[#ff8278]">{error}</p>}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#3d3d3d]">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
@@ -137,9 +113,10 @@ export const PrintHandoffModal: React.FC<PrintHandoffModalProps> = ({
               disabled={isOpening || !attachment}
               icon={<Printer className="w-4 h-4" />}
             >
-              Launch Browser Print Dialog & Set "Printing"
+              Open selected file
             </Button>
           </div>
+          <Button variant="secondary" className="w-full" disabled={!hasOpenedFile || isSaving} onClick={() => { setIsSaving(true); setError(null); void onConfirmPrint().catch(error => setError(error instanceof Error ? error.message : 'Could not save printing status.')).finally(() => setIsSaving(false)); }}>{isSaving ? 'Saving…' : 'I started printing — update order'}</Button>
 
         </div>
       </div>

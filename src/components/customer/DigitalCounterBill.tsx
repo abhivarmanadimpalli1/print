@@ -1,4 +1,5 @@
 import { paymentLabel } from '../../lib/upi';
+import { UpiQrCode } from '../ui/UpiQrCode';
 import React, { useState } from 'react';
 import {
   Printer,
@@ -40,10 +41,10 @@ export const DigitalCounterBill: React.FC<DigitalCounterBillProps> = ({
     hour12: true,
   });
 
-  const totalAmount = (order.config.revisedAmount || order.config.subtotal || 0).toFixed(2);
-  const shopName = shop?.name || 'Campus QuickPrint Center';
-  const shopAddress = shop?.location || 'Opp. University Main Gate';
-  const shopPhone = shop?.ownerPhone || '+91 7989869191';
+  const totalAmount = (order.config.revisedAmount ?? order.config.subtotal ?? 0).toFixed(2);
+  const shopName = shop?.name || 'Print shop';
+  const shopAddress = shop?.location || '';
+  const shopPhone = shop?.phone || '';
 
   // Map order status to tactile printer stage
   const stage: ReceiptPrinterStage =
@@ -168,45 +169,7 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
                 #{order.orderNumber}
               </div>
 
-              {/* Clean SVG Barcode Graphic */}
-              <div className="pt-0.5 flex flex-col items-center">
-                <svg
-                  className="h-8 w-44 text-[#1a1a1a]"
-                  viewBox="0 0 160 36"
-                  fill="currentColor"
-                >
-                  <rect x="0" y="0" width="3" height="36" />
-                  <rect x="5" y="0" width="2" height="36" />
-                  <rect x="9" y="0" width="4" height="36" />
-                  <rect x="15" y="0" width="2" height="36" />
-                  <rect x="19" y="0" width="6" height="36" />
-                  <rect x="28" y="0" width="3" height="36" />
-                  <rect x="33" y="0" width="2" height="36" />
-                  <rect x="38" y="0" width="5" height="36" />
-                  <rect x="46" y="0" width="3" height="36" />
-                  <rect x="51" y="0" width="2" height="36" />
-                  <rect x="56" y="0" width="6" height="36" />
-                  <rect x="65" y="0" width="2" height="36" />
-                  <rect x="69" y="0" width="4" height="36" />
-                  <rect x="76" y="0" width="3" height="36" />
-                  <rect x="82" y="0" width="5" height="36" />
-                  <rect x="90" y="0" width="2" height="36" />
-                  <rect x="94" y="0" width="4" height="36" />
-                  <rect x="101" y="0" width="3" height="36" />
-                  <rect x="107" y="0" width="6" height="36" />
-                  <rect x="116" y="0" width="2" height="36" />
-                  <rect x="120" y="0" width="4" height="36" />
-                  <rect x="127" y="0" width="3" height="36" />
-                  <rect x="133" y="0" width="5" height="36" />
-                  <rect x="141" y="0" width="2" height="36" />
-                  <rect x="145" y="0" width="4" height="36" />
-                  <rect x="152" y="0" width="3" height="36" />
-                  <rect x="157" y="0" width="3" height="36" />
-                </svg>
-                <span className="font-mono text-[10px] text-[#5d5b54] font-semibold tracking-wider mt-0.5">
-                  * {order.id} *
-                </span>
-              </div>
+              <div className="pt-2 flex flex-col items-center gap-1"><UpiQrCode uri={`${window.location.origin}/s/${encodeURIComponent(order.shopId)}?orderId=${encodeURIComponent(order.id)}`} alt="Track this print order" size={128} /><span className="text-[9px] text-[#787671]">SCAN TO TRACK THIS ORDER</span></div>
 
               <div className="pt-1 flex items-center justify-center gap-2">
                 <Badge status={order.status} size="sm" />
@@ -297,10 +260,10 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
             <div className="pt-3 border-t border-dashed border-[#c8c4be] text-center space-y-1 text-[10px] text-[#787671]">
               <div className="flex items-center justify-center gap-1.5 font-semibold text-[#1aae39]">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Verified Counter Print Token • 10-Min Privacy Guarantee</span>
+                <span>Counter Print Token • Check the shop’s file retention policy</span>
               </div>
               <p className="text-[9px] text-[#a4a097]">
-                Powered by Campus QuickPrint Network • Managed by Abhinav (WhatsApp: 7989869191)
+                Powered by QuickPrint
               </p>
             </div>
           </ReceiptPrinter.Paper>

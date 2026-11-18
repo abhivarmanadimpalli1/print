@@ -31,7 +31,7 @@ export const RejectOrderModal: React.FC<RejectOrderModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full overflow-hidden">
+      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full max-h-[90dvh] overflow-y-auto">
         <div className="bg-[#e03131] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5" />

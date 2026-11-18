@@ -8,7 +8,6 @@ import {
   Copy,
   Power,
   Clock,
-  Radio,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -17,7 +16,7 @@ import { Badge } from '../ui/Badge';
 import { UpiQrCode } from '../ui/UpiQrCode';
 import { buildUpiUri, isValidUpiId } from '../../lib/upi';
 import { saveShop } from '../../lib/store';
-import { broadcastToCloud, getShopCloudTopic } from '../../lib/cloudSync';
+import { checkFirestoreConnection } from '../../lib/firebase';
 import type { Shop } from '../../types';
 
 interface ShopSettingsProps {
@@ -38,8 +37,8 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
     ? `${window.location.origin}/s/${shop.slug}`
     : `https://campusprint.local/order/${shop.id}`;
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(customerUrl)}`;
-  const cloudTopic = getShopCloudTopic(shop.id);
+
+
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -72,15 +71,10 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
   const handleTestCloudPing = async () => {
     setIsTestingPing(true);
     setPingSuccess(false);
-    const ok = await broadcastToCloud(shop.id, {
-      action: 'TEST_PING',
-      note: 'Cross-device cloud ping from shop settings',
-    });
-    setIsTestingPing(false);
-    if (ok) {
-      setPingSuccess(true);
-      setTimeout(() => setPingSuccess(false), 3000);
-    }
+    try { await checkFirestoreConnection(); setPingSuccess(true); setSaveError(null); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Could not reach the order database.'); }
+    finally { setIsTestingPing(false); }
+
   };
 
   return (
@@ -108,38 +102,7 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
         </div>
       </div>
 
-      {/* Cloud Sync & Phone Integration Card */}
-      <Card className="bg-[#242424] border-[#3d3d3d] p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#3d3d3d]">
-          <div className="flex items-center gap-2">
-            <Radio className="w-4 h-4 text-[#6ed5a3] animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[#ffffff]">
-              Internet-Wide Phone QR Cloud Sync
-            </span>
-            <span className="text-[10px] font-semibold bg-[#163529] text-[#6ed5a3] px-2 py-0.5 rounded-full">
-              LIVE & CONNECTED
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleTestCloudPing}
-            disabled={isTestingPing}
-            className="text-xs px-2.5 py-1 bg-[#1c1c1c] hover:bg-[#363636] border border-[#606060] rounded-none font-medium text-[#ffffff] transition-colors cursor-pointer self-start sm:self-auto"
-          >
-            {isTestingPing ? 'Pinging Cloud...' : pingSuccess ? '✓ Cloud Responded!' : 'Test Cross-Device Ping'}
-          </button>
-        </div>
-
-        <div className="text-xs text-[#bcbcbc] space-y-1">
-          <p>
-            📡 <strong>Active Cloud Channel:</strong> <code className="bg-[#1c1c1c] px-1.5 py-0.5 rounded text-[11px] font-mono text-[#ff8278]">{cloudTopic}</code>
-          </p>
-          <p className="text-[11px] text-[#b0b0b0]">
-            When customers scan your QR code on any smartphone via cellular data or WiFi, their order is broadcast over this cloud channel directly into your shop queue in less than 200 milliseconds.
-          </p>
-        </div>
-      </Card>
+      <Card className="space-y-3"><h2 className="text-base text-white">Order synchronization</h2><p className="text-xs text-[#bcbcbc]">Saved orders and counter changes synchronize through the order database.</p><Button variant="secondary" onClick={() => void handleTestCloudPing()} disabled={isTestingPing}>{isTestingPing ? 'Checking…' : 'Check database connection'}</Button>{pingSuccess && <p role="status" className="text-xs text-[#6ed5a3]">The order database responded.</p>}</Card>
 
       <Card className="space-y-5">
         <div><h2 className="text-lg text-white">UPI payments</h2><p className="mt-1 text-xs text-[#bcbcbc]">Receive customer payments directly into this shop’s UPI account.</p></div>
@@ -316,11 +279,11 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-[#6ed5a3]" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#ffffff]">
-                Database Auto-Clean & Privacy Policy
+                File Retention Settings
               </h3>
             </div>
             <p className="text-xs text-[#bcbcbc] leading-relaxed">
-              To keep the database clean and protect sensitive customer documents, PDF payloads are automatically and permanently deleted from storage after downloading or printing:
+              To keep the database clean and protect sensitive customer documents, original files are removed when the retention timer expires while this counter is signed in and open:
             </p>
             
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
@@ -385,11 +348,7 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
 
               {/* QR Code Container */}
               <div className="bg-[#242424] p-4 rounded-none border border-[#606060] inline-block shadow-none">
-                <img
-                  src={qrImageUrl}
-                  alt="Shop QR Code"
-                  className="w-48 h-auto aspect-square mx-auto"
-                />
+                <UpiQrCode uri={customerUrl} alt="Shop upload QR code" />
                 <span className="text-[10px] font-mono text-[#b0b0b0] block mt-2 uppercase">
                   SCAN WITH PHONE CAMERA
                 </span>

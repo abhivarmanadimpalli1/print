@@ -10,9 +10,9 @@ import { SuperAdminDashboard } from './components/admin/SuperAdminDashboard';
 import {
   getShop,
   cacheShop,
+  clearOrderCache,
   hydratePublishedShop,
   getOrders,
-  resetDemoData,
   subscribeToStore,
 } from './lib/store';
 import type { Shop } from './types';
@@ -44,7 +44,7 @@ function parseInitialRoute(): {
   if (counterMatch && counterMatch[1]) {
     return {
       shopSlug: counterMatch[1],
-      view: 'shop',
+      view: viewParam === 'settings' ? 'settings' : 'shop',
       orderId: null,
     };
   }
@@ -97,6 +97,16 @@ export function App() {
       if (active) setShopLookup({ shopId: requestedShop, error: 'Could not load this store. Refresh to try again.' });
     });
     return () => { active = false; };
+  }, [requestedShop]);
+
+  useEffect(() => {
+    const navigate = () => {
+      const route = parseInitialRoute();
+      if (route.shopSlug !== requestedShop) { setIsStoreAuthenticated(false); setCheckedCounter(null); }
+      setRequestedShop(route.shopSlug); setCurrentView(route.view); setActiveTrackingOrderId(route.orderId);
+    };
+    window.addEventListener('popstate', navigate);
+    return () => window.removeEventListener('popstate', navigate);
   }, [requestedShop]);
 
   // Update URL history to reflect clean role-based paths
@@ -185,6 +195,7 @@ export function App() {
   };
 
   const handleStoreLogout = () => {
+    clearOrderCache();
     void signOutFromCounter().catch(console.warn);
     setIsStoreAuthenticated(false);
     setCurrentView('customer');
@@ -197,14 +208,6 @@ export function App() {
     </main>;
   }
 
-  const handleResetDemo = () => {
-    if (window.confirm('Reset sample queue orders and default city bookstore network?')) {
-      resetDemoData();
-      setShop(getShop(shop.id));
-      setActiveTrackingOrderId(null);
-    }
-  };
-
   return (
     <div className="app-shell min-h-screen bg-[#181818] flex flex-col text-[#dedede] antialiased selection:bg-[#303030] selection:text-[#ff8278]">
       
@@ -214,7 +217,6 @@ export function App() {
         onViewChange={handleViewChange}
         shop={shop}
         onSelectShop={handleSelectShop}
-        onResetDemo={handleResetDemo}
         isStoreAuthenticated={isStoreAuthenticated}
         onOpenStoreLogin={() => handleViewChange('shop')}
         onStoreLogout={handleStoreLogout}

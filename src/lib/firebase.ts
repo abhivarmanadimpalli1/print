@@ -7,6 +7,7 @@ import {
   runTransaction,
   deleteField,
   getDoc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   query,
@@ -85,7 +86,14 @@ export function saveFirebaseConfig(config: FirebaseConfig): void {
 }
 
 export function isFirebaseConfigured(): boolean {
-  return true;
+  const config = getFirebaseConfig();
+  return Boolean(config.apiKey && config.projectId && config.appId);
+}
+
+export async function checkFirestoreConnection(): Promise<void> {
+  const db = getDb();
+  if (!db) throw new Error('The order database is not configured.');
+  await Promise.race([getDocFromServer(doc(db, 'orders', 'quickprint-connection-check')), new Promise((_, reject) => setTimeout(() => reject(new Error('The order database did not respond.')), 8000))]);
 }
 
 let appInstance: FirebaseApp | null = null;
@@ -164,13 +172,27 @@ export async function syncOrderToFirestore(order: Order): Promise<boolean> {
   }
 }
 
-/** Update payment fields atomically without overwriting concurrent queue or quote changes. */
-export async function updateOrderPaymentInFirestore(
-  orderId: string,
-  change: (current: Order) => Pick<Order, 'paymentStatus' | 'upiPayment'>,
-): Promise<Order> {
+/** Allocate a unique queue number and save the order in the same database transaction. */
+export async function createOrderInFirestore(draft: Order): Promise<Order> {
   const db = getDb();
-  if (!db) throw new Error('The order service is unavailable. Please try again; do not pay again.');
+  if (!db) throw new Error('The order database is unavailable.');
+  const sequence = doc(db, 'orders', 'quickprint-order-sequence');
+  const orderReference = doc(db, 'orders', draft.id);
+  return runTransaction(db, async transaction => {
+    const current = await transaction.get(sequence);
+    const previous = current.exists() ? Number(current.data().lastOrderNumber) : 1000000;
+    if (!Number.isSafeInteger(previous) || previous < 0) throw new Error('The queue number service needs attention. Contact the shop.');
+    const order = { ...draft, orderNumber: previous + 1 };
+    transaction.set(sequence, { lastOrderNumber: order.orderNumber });
+    transaction.set(orderReference, JSON.parse(JSON.stringify(order)));
+    return order;
+  });
+}
+
+/** Mutate the latest order atomically, preserving concurrent payment and queue updates. */
+export async function updateOrderInFirestore(orderId: string, change: (current: Order) => Partial<Order>): Promise<Order> {
+  const db = getDb();
+  if (!db) throw new Error('The order service is unavailable. Please try again.');
   return runTransaction(db, async transaction => {
     const reference = doc(db, 'orders', orderId);
     const snapshot = await transaction.get(reference);
@@ -178,9 +200,19 @@ export async function updateOrderPaymentInFirestore(
     const current = { ...snapshot.data(), id: snapshot.id } as Order;
     const fields = change(current);
     const updatedAt = new Date().toISOString();
-    transaction.update(reference, { ...fields, updatedAt });
+    const safeFields = JSON.parse(JSON.stringify({ ...fields, updatedAt }));
+    if (fields.isPurged) { safeFields.fileDataUrl = deleteField(); safeFields.fileDownloadUrl = deleteField(); }
+    transaction.update(reference, safeFields);
     return { ...current, ...fields, updatedAt };
   });
+}
+
+export const updateOrderPaymentInFirestore = (orderId: string, change: (current: Order) => Pick<Order, 'paymentStatus' | 'upiPayment'>) => updateOrderInFirestore(orderId, change);
+
+export function listenToOrderFromFirestore(orderId: string, onOrder: (order: Order | null) => void): () => void {
+  const db = getDb();
+  if (!db) return () => {};
+  return onSnapshot(doc(db, 'orders', orderId), snapshot => onOrder(snapshot.exists() ? snapshot.data() as Order : null), error => console.warn('Order sync failed:', error));
 }
 
 /**
@@ -219,7 +251,8 @@ export function listenToStoreOrdersFromFirestore(
       (snapshot) => {
         const orders: Order[] = [];
         snapshot.forEach((d) => {
-          orders.push(d.data() as Order);
+          const order = d.data();
+          if (order.id && order.shopId && order.config) orders.push(order as Order);
         });
         orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         onOrders(orders);
@@ -252,7 +285,8 @@ export function listenToAllCityOrdersFromFirestore(
       (snapshot) => {
         const orders: Order[] = [];
         snapshot.forEach((d) => {
-          orders.push(d.data() as Order);
+          const order = d.data();
+          if (order.id && order.shopId && order.config) orders.push(order as Order);
         });
         orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         onOrders(orders);

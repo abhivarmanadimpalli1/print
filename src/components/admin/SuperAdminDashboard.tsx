@@ -9,14 +9,10 @@ import {
   MessageCircle,
   Key,
   Trash2,
-  Sparkles,
   ArrowLeft,
   X,
   FileText,
   Store,
-  Database,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -26,14 +22,11 @@ import {
   deleteStore,
   getCityPlatformMetrics,
   getOrders,
+  saveOrderToLocal,
+  clearOrderCache,
 } from '../../lib/store';
 import { assignShopCounter, createCounterSetupLink, isPlatformAdmin, listManagedShops, signInToPlatform, signOutFromCounter } from '../../lib/supabase';
-import {
-  getFirebaseConfig,
-  saveFirebaseConfig,
-  isFirebaseConfigured,
-  type FirebaseConfig,
-} from '../../lib/firebase';
+import { checkFirestoreConnection, listenToAllCityOrdersFromFirestore } from '../../lib/firebase';
 import type { Shop } from '../../types';
 
 interface SuperAdminDashboardProps {
@@ -70,26 +63,18 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
   const [newStoreColorRate, setNewStoreColorRate] = useState<number>(10.0);
   const [newStoreStatus, setNewStoreStatus] = useState<'active' | 'trial'>('active');
 
-  // Firebase Database State
-  const [isFirebaseLive, setIsFirebaseLive] = useState<boolean>(() => isFirebaseConfigured());
-  const [currentFirebaseConfig, setCurrentFirebaseConfig] = useState<FirebaseConfig | null>(() => getFirebaseConfig());
-  const [showFirebaseModal, setShowFirebaseModal] = useState<boolean>(false);
-  const [firebaseSnippetInput, setFirebaseSnippetInput] = useState<string>('');
-  const [firebaseStatusMsg, setFirebaseStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isFirebaseLive, setIsFirebaseLive] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   // Copied feedback
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
-
-  // Growth Simulator
-  const [simulatedShopsCount, setSimulatedShopsCount] = useState<number>(30);
-  const [simulatedMonthlyFee, setSimulatedMonthlyFee] = useState<number>(499);
 
   const refreshData = useCallback(async () => {
     const registered = (await listManagedShops()).map(hydratePublishedShop);
     setShops(registered);
     setMetrics(getCityPlatformMetrics(registered));
-    setIsFirebaseLive(isFirebaseConfigured());
-    setCurrentFirebaseConfig(getFirebaseConfig());
+    try { await checkFirestoreConnection(); setIsFirebaseLive(true); setConnectionError(null); }
+    catch (error) { setIsFirebaseLive(false); setConnectionError(error instanceof Error ? error.message : 'Order database unavailable.'); }
   }, []);
 
   useEffect(() => {
@@ -106,74 +91,13 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
     return () => { active = false; };
   }, [refreshData]);
 
-  const handleConnectFirebase = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFirebaseStatusMsg(null);
-
-    const input = firebaseSnippetInput.trim();
-    if (!input) {
-      setFirebaseStatusMsg({ type: 'error', text: 'Please paste your Firebase configuration code or JSON.' });
-      return;
-    }
-
-    try {
-      let parsed: Partial<FirebaseConfig> = {};
-
-      if (input.startsWith('{') && input.endsWith('}')) {
-        parsed = JSON.parse(input);
-      } else {
-        // Extract values using regex matching
-        const extract = (key: string) => {
-          const match = input.match(new RegExp(`${key}["']?\\s*:\\s*["']([^"']+)["']`));
-          return match ? match[1] : '';
-        };
-
-        parsed = {
-          apiKey: extract('apiKey'),
-          authDomain: extract('authDomain'),
-          projectId: extract('projectId'),
-          storageBucket: extract('storageBucket'),
-          messagingSenderId: extract('messagingSenderId'),
-          appId: extract('appId'),
-        };
-      }
-
-      if (!parsed.projectId || !parsed.apiKey) {
-        setFirebaseStatusMsg({
-          type: 'error',
-          text: 'Could not find "projectId" and "apiKey" in the snippet. Make sure you copy the entire firebaseConfig object.',
-        });
-        return;
-      }
-
-      const fullConfig: FirebaseConfig = {
-        apiKey: parsed.apiKey || '',
-        authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
-        projectId: parsed.projectId || '',
-        storageBucket: parsed.storageBucket || `${parsed.projectId}.firebasestorage.app`,
-        messagingSenderId: parsed.messagingSenderId || '',
-        appId: parsed.appId || '',
-      };
-
-      saveFirebaseConfig(fullConfig);
-      setIsFirebaseLive(true);
-      setCurrentFirebaseConfig(fullConfig);
-      setFirebaseStatusMsg({
-        type: 'success',
-        text: `✓ Successfully connected to Firebase Project: "${fullConfig.projectId}"! Real-time Firestore sync is now active.`,
-      });
-
-      setTimeout(() => {
-        setShowFirebaseModal(false);
-        void refreshData().catch(error => setStoreError(error.message));
-      }, 1500);
-    } catch (err: unknown) {
-      setFirebaseStatusMsg({
-        type: 'error',
-        text: `Error parsing configuration: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  };
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    return listenToAllCityOrdersFromFirestore(orders => {
+      orders.forEach(saveOrderToLocal);
+      setMetrics(getCityPlatformMetrics(shops));
+    });
+  }, [isAdminAuthenticated, shops]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,12 +133,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         slug: generatedSlug,
         location: newStoreLocation.trim() || 'Local Print Shop',
         ownerName: newStoreOwner.trim() || 'Shop Owner',
-        ownerPhone: newStorePhone.trim() || '+91 98000 00000',
-        monthlySubscriptionFee: Number(newStoreMonthlyFee) || 499,
+        ownerPhone: newStorePhone.trim(),
+        monthlySubscriptionFee: Number(newStoreMonthlyFee),
         subscriptionStatus: newStoreStatus,
         pricing: {
-          bwPerPage: Number(newStoreBwRate) || 2.0,
-          colorPerPage: Number(newStoreColorRate) || 10.0,
+          bwPerPage: Number(newStoreBwRate),
+          colorPerPage: Number(newStoreColorRate),
           duplexRateRatio: 0.9,
           paperSizes: [
             { id: 'A4', name: 'A4 (Standard 75 GSM)', multiplier: 1.0 },
@@ -386,7 +310,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
 
         <div className="flex items-center gap-2.5">
           <Button variant="ghost" size="sm" className="text-white hover:bg-white/10" onClick={() => {
-            void signOutFromCounter().then(() => { setIsAdminAuthenticated(false); setShops([]); }).catch(error => setStoreError(error.message));
+            void signOutFromCounter().then(() => { setIsAdminAuthenticated(false); setShops([]); clearOrderCache(); }).catch(error => setStoreError(error.message));
           }}>Sign out</Button>
           <Button
             variant="primary"
@@ -409,38 +333,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* Firebase Cloud Database Status Banner */}
-      <div className="bg-[#242424] p-4 rounded-none border border-[#3d3d3d] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-none">
-        <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isFirebaseLive ? 'bg-[#163529] text-[#6ed5a3]' : 'bg-[#3c2b22] text-[#f3ba83]'}`}>
-            <Database className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-xs sm:text-sm text-[#ffffff]">
-                Database: {isFirebaseLive ? 'Firebase Firestore (Live & Synced)' : 'Firebase Database (Ready to Connect)'}
-              </span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFirebaseLive ? 'bg-[#163529] text-[#6ed5a3]' : 'bg-[#3c2b22] text-[#f3ba83]'}`}>
-                {isFirebaseLive ? 'CONNECTED' : 'ACTION REQUIRED'}
-              </span>
-            </div>
-            <p className="text-[11px] text-[#b0b0b0] mt-0.5">
-              {isFirebaseLive
-                ? `Project ID: "${currentFirebaseConfig?.projectId}" • Orders and bookstore queues sync in real-time.`
-                : 'Connect your Firebase project to eliminate "Order Not Found" and sync all stores across the city.'}
-            </p>
-          </div>
-        </div>
-
-        <Button
-          variant={isFirebaseLive ? 'secondary' : 'primary'}
-          size="sm"
-          onClick={() => setShowFirebaseModal(true)}
-          icon={<Database className="w-3.5 h-3.5" />}
-        >
-          {isFirebaseLive ? 'Firebase Settings' : 'Connect Firebase'}
-        </Button>
-      </div>
+      <Card className="space-y-2"><h2 className="text-base text-white">Order database</h2><p role="status" className={isFirebaseLive ? 'text-xs text-[#6ed5a3]' : 'text-xs text-[#f3ba83]'}>{isFirebaseLive ? 'Database responded to the latest connection check.' : connectionError || 'Checking connection…'}</p><Button variant="secondary" size="sm" onClick={() => void refreshData()}>Refresh data</Button></Card>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -448,7 +341,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         {/* Abhinav's Monthly SaaS Revenue */}
         <Card className="p-5 bg-[#242424] border border-[#3d3d3d] rounded-none shadow-none">
           <div className="flex items-center justify-between text-[#b0b0b0] mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Your Monthly SaaS Revenue</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Configured Monthly Shop Fees</span>
             <div className="w-7 h-7 rounded-full bg-[#163529] text-[#6ed5a3] flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
             </div>
@@ -458,7 +351,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             <span className="text-xs font-normal text-[#b0b0b0]"> / month</span>
           </div>
           <p className="text-[11px] text-[#b0b0b0] mt-1">
-            From {metrics.activeSubscriptions} active shop subscriptions
+            Listed fees only; this is not a collected-payment total
           </p>
         </Card>
 
@@ -499,7 +392,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         {/* Total Bookstores Gross Sales */}
         <Card className="p-5 bg-[#242424] border border-[#3d3d3d] rounded-none shadow-none">
           <div className="flex items-center justify-between text-[#b0b0b0] mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Shop Print Turnover</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Confirmed Print Payments</span>
             <div className="w-7 h-7 rounded-full bg-[#243239] text-[#8ccce9] flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
@@ -508,81 +401,11 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
             ₹{metrics.totalCityGrossSales.toLocaleString()}
           </div>
           <p className="text-[11px] text-[#b0b0b0] mt-1">
-            100% kept directly by shopkeepers
+            Orders marked paid; cancelled orders excluded
           </p>
         </Card>
 
       </div>
-
-      {/* SaaS Revenue Growth Simulator */}
-      <Card className="p-5 bg-[#303030] border border-[#3d3d3d] rounded-none">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-bold text-[#ff8278]">
-              <Sparkles className="w-4 h-4" />
-              <span>Abhinav's City Scaling Calculator</span>
-            </div>
-            <h3 className="text-sm font-semibold text-[#ffffff] mt-0.5">
-              Projected Monthly & Annual Recurring SaaS Profit
-            </h3>
-            <p className="text-xs text-[#b0b0b0]">
-              See how much you will earn by signing up shops in your city at a flat monthly software fee.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-xs">
-            <div>
-              <span className="text-[#b0b0b0] block mb-1">Shops Onboarded:</span>
-              <div className="flex items-center gap-1">
-                {[10, 25, 50, 100].map(cnt => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    onClick={() => setSimulatedShopsCount(cnt)}
-                    className={`px-2.5 py-1 rounded-none font-semibold cursor-pointer ${
-                      simulatedShopsCount === cnt
-                        ? 'bg-[#da291c] text-white shadow-none'
-                        : 'bg-[#242424] border border-[#3d3d3d] text-[#b0b0b0] hover:text-[#ffffff]'
-                    }`}
-                  >
-                    {cnt}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-[#b0b0b0] block mb-1">Monthly Fee:</span>
-              <div className="flex items-center gap-1">
-                {[499, 699, 999].map(fee => (
-                  <button
-                    key={fee}
-                    type="button"
-                    onClick={() => setSimulatedMonthlyFee(fee)}
-                    className={`px-2.5 py-1 rounded-none font-semibold cursor-pointer ${
-                      simulatedMonthlyFee === fee
-                        ? 'bg-[#137333] text-white shadow-none'
-                        : 'bg-[#242424] border border-[#3d3d3d] text-[#b0b0b0] hover:text-[#ffffff]'
-                    }`}
-                  >
-                    ₹{fee}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-[#242424] p-3 rounded-none border border-[#3d3d3d] shadow-none text-right">
-              <span className="text-[10px] text-[#b0b0b0] uppercase tracking-wider block">Your Net Income</span>
-              <div className="text-base font-bold text-[#6ed5a3]">
-                ₹{(simulatedShopsCount * simulatedMonthlyFee).toLocaleString()} / month
-              </div>
-              <div className="text-[11px] text-[#b0b0b0]">
-                ₹{(simulatedShopsCount * simulatedMonthlyFee * 12).toLocaleString()} / year
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* Bookstores Directory Table */}
       <Card className="bg-[#242424] border border-[#3d3d3d] rounded-none shadow-none overflow-hidden">
@@ -983,97 +806,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Firebase Database Configuration Modal */}
-      {showFirebaseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-xl w-full max-h-[90vh] overflow-y-auto">
-            
-            <div className="bg-[#181818] text-white p-5 flex items-center justify-between sticky top-0 z-10">
-              <div className="flex items-center gap-2.5">
-                <Database className="w-5 h-5 text-[#ffffff]" />
-                <div>
-                  <h3 className="text-sm font-semibold">Connect Firebase Database</h3>
-                  <p className="text-[11px] text-[#969696]">Persistent Cloud Firestore & File Storage</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFirebaseModal(false)}
-                className="p-1 text-[#969696] hover:text-white rounded hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <form onSubmit={handleConnectFirebase} className="p-6 space-y-4">
-              
-              {/* Instructions */}
-              <div className="p-3 bg-[#1c1c1c] rounded-none border border-[#3d3d3d] text-xs space-y-1.5 text-[#dedede]">
-                <div className="font-semibold text-[#ffffff] flex items-center gap-1.5">
-                  <span>How to get your Firebase snippet (2-minute free setup):</span>
-                </div>
-                <ol className="list-decimal pl-4 space-y-1 text-[11px] text-[#bcbcbc]">
-                  <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-[#ff8278] underline font-medium">console.firebase.google.com</a> and click <strong>Add project</strong>.</li>
-                  <li>Click <strong>Build &gt; Firestore Database</strong> &gt; Create Database (choose <em>Start in Test mode</em>).</li>
-                  <li>Click the ⚙️ gear icon &gt; <strong>Project settings</strong> &gt; Under <em>Your apps</em> click Web (<strong>&lt;/&gt;</strong>) and copy the <code className="bg-[#242424] px-1 py-0.5 rounded font-mono">firebaseConfig</code> object.</li>
-                </ol>
-              </div>
-
-              {/* Paste Config Input */}
-              <div>
-                <label className="block text-xs font-semibold text-[#dedede] mb-1.5">
-                  Paste your Firebase Config Snippet or JSON:
-                </label>
-                <textarea
-                  rows={8}
-                  value={firebaseSnippetInput}
-                  onChange={(e) => setFirebaseSnippetInput(e.target.value)}
-                  placeholder={`const firebaseConfig = {\n  apiKey: "AIzaSy...",\n  authDomain: "my-print-app.firebaseapp.com",\n  projectId: "my-print-app",\n  storageBucket: "my-print-app.firebasestorage.app",\n  messagingSenderId: "1234567890",\n  appId: "1:1234567890:web:..."\n};`}
-                  className="w-full text-xs p-3 bg-[#1c1c1c] border border-[#3d3d3d] rounded-none text-[#ffffff] font-mono focus:bg-[#242424] focus:outline-none focus:ring-1 focus:ring-[#da291c] transition-all"
-                />
-              </div>
-
-              {/* Status Message */}
-              {firebaseStatusMsg && (
-                <div className={`p-3 rounded-none text-xs flex items-center gap-2 ${
-                  firebaseStatusMsg.type === 'success'
-                    ? 'bg-[#163529] text-[#6ed5a3] border border-[#cbf0d8]'
-                    : 'bg-[#402321] text-[#ff8278] border border-[#ff8278]/30'
-                }`}>
-                  {firebaseStatusMsg.type === 'success' ? (
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                  )}
-                  <span>{firebaseStatusMsg.text}</span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowFirebaseModal(false)}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="py-2 px-4"
-                  icon={<Database className="w-4 h-4" />}
-                >
-                  Save & Connect Firebase
-                </Button>
-              </div>
-
-            </form>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

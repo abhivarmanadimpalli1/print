@@ -4,7 +4,6 @@ import {
   AlertCircle,
   Clock,
   Shield,
-  HelpCircle,
   Info,
   ChevronRight,
   Layers,
@@ -26,9 +25,8 @@ import { Badge } from '../ui/Badge';
 import { isValidUpiId } from '../../lib/upi';
 import { countPdfPages } from '../../lib/pdfPages';
 import { MagneticDropZone } from './MagneticDropZone';
-import { parsePageRange } from '../../lib/pageRangeParser';
+import { formatPageRanges, parsePageRange, splitPagesByFile } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
-import { generateMinimalPdf } from '../../lib/samplePdf';
 import { maxOrderFileSize, removeOrderAttachmentPaths } from '../../lib/supabase';
 import { uploadOrderAttachments } from '../../lib/orderAttachments';
 import type { Shop, PrintJobConfig, ColorMode, PrintSides, PaperSize, PageRangeType, PaymentChoice, Order } from '../../types';
@@ -87,8 +85,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
   // Quick Order Tracking by Number (#1046)
   const [quickTrackInput, setQuickTrackInput] = useState<string>('');
-  const recentOrderId = typeof window !== 'undefined' ? localStorage.getItem('recent_order_id') : null;
-  const recentOrderNum = typeof window !== 'undefined' ? localStorage.getItem('recent_order_num') : null;
+  const recentOrderId = typeof window !== 'undefined' ? localStorage.getItem(`recent_order_id:${shop.id}`) : null;
+  const recentOrderNum = typeof window !== 'undefined' ? localStorage.getItem(`recent_order_num:${shop.id}`) : null;
 
   const handleQuickTrack = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -107,16 +105,10 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     ? `${docList.length} files`
     : '';
 
-  const parsedRange = pageRangeType === 'all'
-    ? { valid: true, count: totalPagesInDoc }
-    : parsePageRange(customRange, totalPagesInDoc);
-
+  const parsedRange = parsePageRange(pageRangeType === 'all' ? '' : customRange, totalPagesInDoc);
   const selectedPageCount = parsedRange.valid ? parsedRange.count : 0;
-  
-  // Duplex sheets calculation: ceil(pages / 2)
-  const sheetsNeeded = sides === 'duplex'
-    ? Math.ceil(selectedPageCount / 2)
-    : selectedPageCount;
+  const pagesPerFile = splitPagesByFile(docList.map(doc => doc.detectedPages), parsedRange.pages);
+  const sheetsNeeded = pagesPerFile.reduce((sum, pages) => sum + (sides === 'duplex' ? Math.ceil(pages.length / 2) : pages.length), 0);
 
   // Rate calculation
   const baseRate = colorMode === 'color' ? shop.pricing.colorPerPage : shop.pricing.bwPerPage;
@@ -129,21 +121,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
   const unitPrice = effectivePerPageRate * sizeMultiplier;
   const estimatedSubtotal = Math.max(0, unitPrice * selectedPageCount * copies);
-
-  // Quick Preset Document Loader
-  const loadPresetFile = (name: string, pages: number, sizeKB: number) => {
-    setUploadError(null);
-    const presetItem: UploadedDocItem = {
-      id: `preset_${Date.now()}`,
-      name,
-      size: sizeKB * 1024,
-      detectedPages: pages,
-      dataUrl: generateMinimalPdf(name, pages),
-      isImage: false,
-    };
-    setDocList([presetItem]);
-    setCustomRange(`1-${pages}`);
-  };
 
   // Process incoming files from Magnetic DropZone or file input
   const processFiles = async (incomingFiles: File[]): Promise<UploadedDocItem[]> => {
@@ -250,7 +227,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     const errors: Record<string, string> = {};
 
     if (docList.length === 0) {
-      errors.file = 'Please upload at least one PDF or photo, or choose a sample file.';
+      errors.file = 'Please upload at least one PDF or photo, and try again.';
     }
 
     if (pageRangeType === 'custom' && (!parsedRange.valid || parsedRange.count <= 0)) {
@@ -304,7 +281,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         customerNotes: customerNotes.trim() || undefined,
         fileName: primaryFileName,
         fileSize: totalSize,
-        attachments: uploaded,
+        attachments: uploaded.map((file, index) => ({ ...file, pageCount: docList[index].detectedPages,
+          printPageRange: formatPageRanges(pagesPerFile[index]), printPageCount: pagesPerFile[index].length })),
         detectedPageCount: totalPagesInDoc,
         config,
         paymentMode: paymentChoice,
@@ -323,8 +301,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     }
 
     try {
-      localStorage.setItem('recent_order_id', newOrder.id);
-      localStorage.setItem('recent_order_num', String(newOrder.orderNumber));
+      localStorage.setItem(`recent_order_id:${shop.id}`, newOrder.id);
+      localStorage.setItem(`recent_order_num:${shop.id}`, String(newOrder.orderNumber));
       confetti({
         particleCount: 70,
         spread: 60,
@@ -392,7 +370,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
           {/* Retention notice */}
           <div className="p-3 bg-[#303030] border border-[#3d3d3d] rounded-none text-[11px] text-[#f3ba83] flex items-center gap-2 mb-6 text-left">
             <Shield className="w-4 h-4 shrink-0 text-[#f3ba83]" />
-            <span>The counter removes files after the 10-minute retention period.</span>
+            <span>The signed-in counter clears files when their retention timer expires.</span>
           </div>
 
           <div className="space-y-2.5">
@@ -551,39 +529,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                   files={[]}
                 />
 
-                {/* Quick Demo Preloaded Files */}
-                <div className="pt-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#b0b0b0] mb-2 flex items-center gap-1.5">
-                    <HelpCircle className="w-3.5 h-3.5 text-[#ff8278]" />
-                    Or test with one-click sample files:
-                  </p>
-                  <div className="grid grid-cols-1 min-[400px]:grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => loadPresetFile('OS_Lecture_Notes_Unit_1.pdf', 14, 210)}
-                      className="p-2 border border-[#3d3d3d] rounded-none bg-[#242424] hover:bg-[#1c1c1c] text-left transition-colors cursor-pointer"
-                    >
-                      <p className="text-[11px] font-medium text-[#ffffff] truncate">Lecture Notes</p>
-                      <p className="text-[10px] text-[#b0b0b0]">14 pages • B&W</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loadPresetFile('Design_Project_Report.pdf', 6, 95)}
-                      className="p-2 border border-[#3d3d3d] rounded-none bg-[#242424] hover:bg-[#1c1c1c] text-left transition-colors cursor-pointer"
-                    >
-                      <p className="text-[11px] font-medium text-[#ffffff] truncate">Project Report</p>
-                      <p className="text-[10px] text-[#b0b0b0]">6 pages • Color</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loadPresetFile('Resume_2026_Standard.pdf', 2, 45)}
-                      className="p-2 border border-[#3d3d3d] rounded-none bg-[#242424] hover:bg-[#1c1c1c] text-left transition-colors cursor-pointer"
-                    >
-                      <p className="text-[11px] font-medium text-[#ffffff] truncate">Resume</p>
-                      <p className="text-[10px] text-[#b0b0b0]">2 pages • Quick</p>
-                    </button>
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -893,7 +838,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 error={formErrors.phone}
-                helperText="Used to ping you when your print is ready at the counter"
+                helperText="Lets the shop contact you about this order"
               />
 
               <div>

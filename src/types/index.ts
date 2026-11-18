@@ -88,6 +88,9 @@ export interface OrderAttachment {
   name: string;
   size: number;
   storagePath?: string;
+  pageCount?: number;
+  printPageRange?: string;
+  printPageCount?: number;
 }
 
 export interface UpiPayment {
@@ -116,6 +119,7 @@ export interface Order {
   config: PrintJobConfig;
   paymentMode: PaymentChoice;
   paymentStatus: PaymentStatus;
+  paymentReceivedAt?: string;
   upiPayment?: UpiPayment;
   status: OrderStatus;
   statusHistory: StatusHistoryEntry[];

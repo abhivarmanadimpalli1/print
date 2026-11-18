@@ -1,46 +1,36 @@
-/**
- * Parses user input like "1-4, 7, 9-11" and computes the total count of valid pages within 1..maxPages
- */
-export function parsePageRange(rangeStr: string, maxPages: number): { valid: boolean; count: number; error?: string } {
-  if (!rangeStr.trim()) {
-    return { valid: true, count: maxPages };
+/** Parse a strict, one-based page selection against the actual document length. */
+export function parsePageRange(value: string, maxPages: number): { valid: boolean; count: number; pages: number[]; error?: string } {
+  const invalid = (error: string) => ({ valid: false, count: 0, pages: [], error });
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1) return invalid('The document has no printable pages.');
+  if (!value.trim()) return { valid: true, count: maxPages, pages: Array.from({ length: maxPages }, (_, i) => i + 1) };
+  const pages = new Set<number>();
+  for (const part of value.split(',')) {
+    const match = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    if (!match) return invalid(`Invalid page selection: "${part}". Use 1-5, 8.`);
+    const start = Number(match[1]), end = Number(match[2] || match[1]);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) return invalid(`Invalid page range: "${part}".`);
+    if (end > maxPages) return invalid(`Page ${end} exceeds the document length (${maxPages}).`);
+    for (let page = start; page <= end; page++) pages.add(page);
   }
+  const ordered = [...pages].sort((a, b) => a - b);
+  return { valid: true, count: ordered.length, pages: ordered };
+}
 
-  const parts = rangeStr.split(',').map(s => s.trim()).filter(Boolean);
-  const selectedPages = new Set<number>();
+export function splitPagesByFile(pageCounts: number[], selected: number[]): number[][] {
+  let offset = 0;
+  return pageCounts.map(count => {
+    const pages = selected.filter(page => page > offset && page <= offset + count).map(page => page - offset);
+    offset += count;
+    return pages;
+  });
+}
 
-  for (const part of parts) {
-    if (part.includes('-')) {
-      const [startStr, endStr] = part.split('-').map(s => s.trim());
-      const start = parseInt(startStr, 10);
-      const end = parseInt(endStr, 10);
-
-      if (isNaN(start) || isNaN(end) || start < 1 || end < start) {
-        return { valid: false, count: 0, error: `Invalid range format: "${part}". Example: 1-5, 8` };
-      }
-
-      if (end > maxPages) {
-        return { valid: false, count: 0, error: `Page ${end} exceeds total document pages (${maxPages})` };
-      }
-
-      for (let p = start; p <= end; p++) {
-        selectedPages.add(p);
-      }
-    } else {
-      const p = parseInt(part, 10);
-      if (isNaN(p) || p < 1) {
-        return { valid: false, count: 0, error: `Invalid page number: "${part}"` };
-      }
-      if (p > maxPages) {
-        return { valid: false, count: 0, error: `Page ${p} exceeds total document pages (${maxPages})` };
-      }
-      selectedPages.add(p);
-    }
+export function formatPageRanges(pages: number[]): string {
+  const ranges: string[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    const start = pages[i];
+    while (i + 1 < pages.length && pages[i + 1] === pages[i] + 1) i++;
+    ranges.push(start === pages[i] ? String(start) : `${start}-${pages[i]}`);
   }
-
-  if (selectedPages.size === 0) {
-    return { valid: false, count: 0, error: 'No valid pages selected' };
-  }
-
-  return { valid: true, count: selectedPages.size };
+  return ranges.join(', ');
 }

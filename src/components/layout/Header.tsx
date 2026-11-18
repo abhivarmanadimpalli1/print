@@ -15,7 +15,6 @@ interface HeaderProps {
   onViewChange: (view: 'customer' | 'shop' | 'settings' | 'admin') => void;
   shop: Shop;
   onSelectShop: (shop: Shop) => void;
-  onResetDemo: () => void;
   isStoreAuthenticated: boolean;
   onOpenStoreLogin: () => void;
   onStoreLogout: () => void;
@@ -44,9 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
             <p className="brand-subtitle">{currentView === 'customer' ? shop.location : currentView === 'admin' ? 'PLATFORM MANAGEMENT' : 'COUNTER WORKSTATION'}</p>
           </div>
         </div>
-        {currentView === 'customer' && shop.ownerPhone && (
-          <a className="header-phone" href={`tel:${shop.ownerPhone}`} aria-label={`Call ${shop.name}: ${shop.ownerPhone}`}>
-            <Phone size={16} /><span>{shop.ownerPhone}</span>
+        {currentView === 'customer' && shop.phone && (
+          <a className="header-phone" href={`tel:${shop.phone}`} aria-label={`Call ${shop.name}: ${shop.phone}`}>
+            <Phone size={16} /><span>{shop.phone}</span>
           </a>
         )}
         {isCounter && isStoreAuthenticated && (

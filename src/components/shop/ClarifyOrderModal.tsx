@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 interface ClarifyOrderModalProps {
   orderNumber: number;
   currentAmount: number;
-  onConfirm: (note: string, revisedAmount?: number) => void;
+  onConfirm: (note: string, revisedAmount?: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -15,18 +15,23 @@ export const ClarifyOrderModal: React.FC<ClarifyOrderModalProps> = ({
   onConfirm,
   onClose,
 }) => {
-  const [note, setNote] = useState<string>('Cover page is color, pages 2 onwards can be printed in B&W for a lower price. Please confirm at the counter.');
+  const [note, setNote] = useState<string>('');
   const [shouldReviseAmount, setShouldReviseAmount] = useState<boolean>(false);
   const [revisedAmount, setRevisedAmount] = useState<number>(currentAmount);
 
-  const handleConfirm = () => {
-    if (!note.trim()) return;
-    onConfirm(note.trim(), shouldReviseAmount ? revisedAmount : undefined);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const handleConfirm = async () => {
+    if (!note.trim() || isSaving) return;
+    setIsSaving(true); setError(null);
+    try { await onConfirm(note.trim(), shouldReviseAmount ? revisedAmount : undefined); }
+    catch (error) { setError(error instanceof Error ? error.message : 'Could not save this update.'); }
+    finally { setIsSaving(false); }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full overflow-hidden">
+      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full max-h-[90dvh] overflow-y-auto">
         <div className="bg-[#dd5b00] text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <HelpCircle className="w-5 h-5" />
@@ -78,12 +83,13 @@ export const ClarifyOrderModal: React.FC<ClarifyOrderModalProps> = ({
             )}
           </div>
 
+          {error && <p role="alert" className="text-xs text-[#ff8278]">{error}</p>}
           <div className="flex justify-end gap-2 pt-2 border-t border-[#3d3d3d]">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" onClick={handleConfirm}>
-              Send Update to Order
+            <Button variant="primary" size="sm" onClick={() => void handleConfirm()} disabled={isSaving || !note.trim()}>
+              {isSaving ? 'Saving…' : 'Send Update to Order'}
             </Button>
           </div>
         </div>

@@ -13,8 +13,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { getOrder, getShop, saveOrderToLocal, submitUpiReference, subscribeToStore } from '../../lib/store';
-import { getOrderFromFirestore, listenToStoreOrdersFromFirestore } from '../../lib/firebase';
-import { listenToCloud } from '../../lib/cloudSync';
+import { getOrderFromFirestore, listenToOrderFromFirestore } from '../../lib/firebase';
 import { DigitalCounterBill } from './DigitalCounterBill';
 import { PaymentModal } from './PaymentModal';
 import { getUpiPaymentIssue, paymentLabel } from '../../lib/upi';
@@ -33,7 +32,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   onSelectOrder,
   shop: propShop,
 }) => {
-  const [activeId, setActiveId] = useState<string>(initialOrderId);
+  const [activeId, setActiveId] = useState<string>(() => getOrder(initialOrderId)?.id || initialOrderId);
   const [order, setOrder] = useState<Order | undefined>(() => getOrder(initialOrderId));
   const [isSearchingCloud, setIsSearchingCloud] = useState<boolean>(!order);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -47,8 +46,8 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
 
   // Sync state if initialOrderId prop changes
   useEffect(() => {
-    setActiveId(initialOrderId);
     const existing = getOrder(initialOrderId);
+    setActiveId(existing?.id || initialOrderId);
     setOrder(existing);
     if (!existing) {
       setIsSearchingCloud(true);
@@ -65,31 +64,15 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
       }
     });
 
-    const currentShopId = order?.shopId || propShop?.id || 'sri-krishna-xerox';
-
-    // Real-time Cloud SSE listener
-    const unsubCloud = listenToCloud(currentShopId, (payload) => {
-      if (payload.action === 'UPDATE_STATUS' && payload.orderId) {
-        const cleanA = String(activeId).replace(/^#/, '').toUpperCase();
-        const cleanPayload = String(payload.orderId).replace(/^#/, '').toUpperCase();
-        if (cleanA === cleanPayload || cleanPayload.includes(cleanA) || cleanA.includes(cleanPayload)) {
-          const refreshed = getOrder(activeId);
-          if (refreshed) setOrder(refreshed);
-        }
-      }
-    });
-
-    // Real-time Firestore listener
-    const unsubFirestore = listenToStoreOrdersFromFirestore(currentShopId, (remoteOrders) => {
-      remoteOrders.forEach(o => saveOrderToLocal(o));
-      const match = getOrder(activeId);
-      if (match) {
-        setOrder(match);
+    const unsubFirestore = listenToOrderFromFirestore(activeId, remote => {
+      if (remote) {
+        try { saveOrderToLocal(remote); } catch { /* Keep the live order usable without local storage. */ }
+        setOrder(remote);
         setIsSearchingCloud(false);
       }
     });
 
-    if (!order) {
+    if (!getOrder(activeId)) {
       setIsSearchingCloud(true);
       const timeoutId = setTimeout(() => {
         setIsSearchingCloud(false);
@@ -101,6 +84,7 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
           if (fromFirestore) {
             saveOrderToLocal(fromFirestore);
             setOrder(fromFirestore);
+            setActiveId(fromFirestore.id);
           }
         } catch (err) {
           console.warn('[Firestore lookup]', err);
@@ -113,10 +97,9 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
 
     return () => {
       unsubStore();
-      unsubCloud();
       unsubFirestore();
     };
-  }, [activeId, order, propShop?.id]);
+  }, [activeId]);
 
   // Handle user searching for another order number (e.g. "1046" or "ORD-1046")
   const handleSearchOrder = async (queryToSearch: string) => {
@@ -225,13 +208,15 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
     );
   }
 
+  if (propShop && order.shopId !== propShop.id) return <div className="max-w-xl mx-auto p-6 space-y-4"><p role="alert">This order belongs to a different shop. Open its original tracking link.</p><Button onClick={onBackToOrder}>Back to this shop</Button></div>;
+
   const steps: { key: OrderStatus; label: string; desc: string }[] = [
     { key: 'new', label: 'Order Received', desc: 'Job registered in bookstore queue' },
     { key: 'review', label: 'Shopkeeper Review', desc: 'Checking file format and margins' },
     { key: 'approved', label: 'Approved', desc: 'Verified and queued for print spool' },
-    { key: 'printing', label: 'Printing at Counter', desc: 'Hardware feeding paper sheets' },
+    { key: 'printing', label: 'Printing at Counter', desc: 'The shop marked this order as printing' },
     { key: 'ready', label: 'Ready for Pickup', desc: 'Finished sheets placed in counter tray' },
-    { key: 'completed', label: 'Order Completed', desc: 'Collected by student' },
+    { key: 'completed', label: 'Order Completed', desc: 'Collected by the customer' },
   ];
 
   const currentStepIndex = steps.findIndex(s => s.key === order.status);
