@@ -1,3 +1,4 @@
+import { paymentLabel } from '../../lib/upi';
 import React, { useState } from 'react';
 import {
   Printer,
@@ -74,7 +75,7 @@ export const DigitalCounterBill: React.FC<DigitalCounterBillProps> = ({
 👤 *Customer:* ${order.customerName} (${order.customerPhone})
 📄 *File:* ${order.fileName}
 📑 *Details:* ${order.config.selectedPageCount} pgs • ${order.config.copies} copy • ${order.config.colorMode.toUpperCase()} • ${order.config.sides === 'duplex' ? 'Duplex' : 'Single'}
-💰 *Total Payable:* ₹${totalAmount} (${order.paymentStatus === 'paid' ? 'PAID ONLINE' : 'PAY AT COUNTER'})
+💰 *Total Payable:* ₹${totalAmount} (${paymentLabel(order)})
 ⚡ *Live Status:* ${order.status.toUpperCase()}
 
 🔗 *Live Order & Status Link:*
@@ -275,12 +276,13 @@ _Powered by Campus QuickPrint SaaS Network • Managed by Abhinav_`;
                 <span className="font-semibold text-[#1aae39]">₹0.00 (FREE KIOSK)</span>
               </div>
 
+              {order.upiPayment?.utr && <div className="flex flex-wrap justify-between gap-2 text-[10px] text-[#5d5b54] border-b border-[#f0eeec] py-1"><span>UPI transaction reference</span><span className="font-mono">{order.upiPayment.utr}</span></div>}
               {/* Grand Total Row */}
               <div className="flex justify-between items-baseline pt-2">
                 <div>
                   <span className="text-sm font-bold text-[#1a1a1a] block">Grand Total:</span>
                   <span className="text-[10px] text-[#787671]">
-                    Payment: <strong className="text-[#da291c]">{order.paymentStatus === 'paid' ? 'Paid Online [Sandbox]' : 'Pay at Counter (Cash/UPI)'}</strong>
+                    Payment: <strong className="text-[#da291c]">{paymentLabel(order)}</strong>
                   </span>
                 </div>
                 <div className="text-right">

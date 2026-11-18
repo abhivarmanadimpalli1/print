@@ -12,10 +12,12 @@ import {
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { getOrder, getShop, saveOrderToLocal, subscribeToStore } from '../../lib/store';
+import { getOrder, getShop, saveOrderToLocal, submitUpiReference, subscribeToStore } from '../../lib/store';
 import { getOrderFromFirestore, listenToStoreOrdersFromFirestore } from '../../lib/firebase';
 import { listenToCloud } from '../../lib/cloudSync';
 import { DigitalCounterBill } from './DigitalCounterBill';
+import { PaymentModal } from './PaymentModal';
+import { getUpiPaymentIssue, paymentLabel } from '../../lib/upi';
 import type { Order, OrderStatus, Shop } from '../../types';
 
 interface CustomerOrderStatusProps {
@@ -38,6 +40,10 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
   const [searchError, setSearchError] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'tracker' | 'bill'>('bill'); // Default to tactile bill!
   const [isManualSearching, setIsManualSearching] = useState<boolean>(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(() => {
+    const saved = getOrder(initialOrderId);
+    return Boolean(saved?.paymentMode === 'online' && saved.paymentStatus === 'pending' && !saved.upiPayment?.utr && !getUpiPaymentIssue(saved));
+  });
 
   // Sync state if initialOrderId prop changes
   useEffect(() => {
@@ -273,6 +279,15 @@ export const CustomerOrderStatus: React.FC<CustomerOrderStatusProps> = ({
           {isManualSearching ? 'Searching...' : 'Track'}
         </Button>
       </div>
+
+      {order.paymentMode === 'online' && <Card className="no-print space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg text-white">{paymentLabel(order)}</h2><p className="text-xs text-[#bcbcbc] mt-1">{order.upiPayment?.payeeName || currentShop?.name || 'Shop'}</p></div><span className="text-xl text-white">₹{(order.config.revisedAmount ?? order.config.subtotal).toFixed(2)}</span></div>
+        {order.upiPayment?.utr && <p className="text-sm text-[#bcbcbc] break-all">UPI reference: <strong className="text-white">{order.upiPayment.utr}</strong></p>}
+        {order.paymentStatus === 'pending' && (getUpiPaymentIssue(order) ? <p className="text-xs text-[#f3ba83]">{getUpiPaymentIssue(order)}</p> : order.upiPayment?.utr ? <p className="text-xs text-[#f3ba83]">Your reference has been submitted. The shop will check receipt of the money. Do not pay again.</p> : <><Button onClick={() => setShowPaymentModal(true)} className="w-full">Pay with UPI / submit reference</Button><p className="text-xs text-[#bcbcbc]">If you already paid, submit that transaction’s reference. Do not make another payment.</p></>)}
+      </Card>}
+      {showPaymentModal && order.paymentMode === 'online' && <PaymentModal key={order.id} order={order}
+        onCancel={() => setShowPaymentModal(false)}
+        onSubmitReference={async utr => { const updated = await submitUpiReference(order.id, utr); setOrder(updated); setShowPaymentModal(false); }} />}
 
       {/* View Switcher: Digital Counter Bill vs Pipeline Status */}
       <div className="no-print flex bg-[#303030] p-1 rounded-none border border-[#3d3d3d]">

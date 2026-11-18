@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   setDoc,
+  runTransaction,
   deleteField,
   getDoc,
   getDocs,
@@ -161,6 +162,25 @@ export async function syncOrderToFirestore(order: Order): Promise<boolean> {
     console.warn('[Firebase] Failed to sync order to Firestore:', err);
     return false;
   }
+}
+
+/** Update payment fields atomically without overwriting concurrent queue or quote changes. */
+export async function updateOrderPaymentInFirestore(
+  orderId: string,
+  change: (current: Order) => Pick<Order, 'paymentStatus' | 'upiPayment'>,
+): Promise<Order> {
+  const db = getDb();
+  if (!db) throw new Error('The order service is unavailable. Please try again; do not pay again.');
+  return runTransaction(db, async transaction => {
+    const reference = doc(db, 'orders', orderId);
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists()) throw new Error('Order not found.');
+    const current = { ...snapshot.data(), id: snapshot.id } as Order;
+    const fields = change(current);
+    const updatedAt = new Date().toISOString();
+    transaction.update(reference, { ...fields, updatedAt });
+    return { ...current, ...fields, updatedAt };
+  });
 }
 
 /**

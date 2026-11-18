@@ -1,5 +1,6 @@
 import type { Shop, Order, OrderStatus } from '../types';
 import { generateMinimalPdf } from './samplePdf';
+import { getUpiPaymentIssue, isValidUpiId } from './upi';
 import {
   broadcastToCloud,
   listenToCloud,
@@ -8,9 +9,10 @@ import {
 } from './cloudSync';
 import {
   syncOrderToFirestore,
+  updateOrderPaymentInFirestore,
   listenToAllCityOrdersFromFirestore,
 } from './firebase';
-import { archivePublishedShop, hasVerifiedCounter, publishNewShop, removeOrderAttachmentPaths, updatePublishedShop, type PublishedShop } from './supabase';
+import { archivePublishedShop, canAccessCounter, hasVerifiedCounter, publishNewShop, removeOrderAttachmentPaths, updatePublishedShop, type PublishedShop } from './supabase';
 
 const SHOPS_KEY = 'qr_print_shops_v1';
 const ORDERS_KEY = 'qr_print_orders_v1';
@@ -547,6 +549,7 @@ export function hydratePublishedShop(row: PublishedShop): Shop {
 }
 
 export async function saveShop(shop: Shop): Promise<void> {
+  if (shop.upiId && !isValidUpiId(shop.upiId)) throw new Error('Enter a valid shop UPI ID.');
   await updatePublishedShop(shop);
   cacheShop(shop);
 }
@@ -729,6 +732,35 @@ export async function createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 
     console.warn('Order saved in Firestore, but could not be cached on this device:', error);
   }
   return newOrder;
+}
+
+/** Customer reports a transfer; this never marks a payment as received. */
+export async function submitUpiReference(orderId: string, utr: string): Promise<Order> {
+  if (!/^\d{12}$/.test(utr.trim())) throw new Error('Enter the 12-digit UPI transaction reference from your payment app.');
+  const updated = await updateOrderPaymentInFirestore(orderId, order => {
+    const issue = getUpiPaymentIssue(order);
+    if (issue) throw new Error(issue);
+    if (order.upiPayment!.utr) throw new Error('A reference has already been submitted. Contact the shop to check it.');
+    return { paymentStatus: 'pending', upiPayment: { ...order.upiPayment!, utr: utr.trim(), submittedAt: new Date().toISOString() } };
+  });
+  try { saveOrderToLocal(updated); } catch (error) { console.warn('Payment saved online; local cache unavailable:', error); }
+  return updated;
+}
+
+/** Manual receipt confirmation by the signed-in shop counter. */
+export async function confirmUpiPayment(orderId: string): Promise<Order> {
+  const order = getOrder(orderId);
+  if (!order) throw new Error('Order not found.');
+  if (!(await canAccessCounter(order.shopId))) throw new Error('Sign in to this shop counter to confirm receipt.');
+  const updated = await updateOrderPaymentInFirestore(orderId, current => {
+    if (current.shopId !== order.shopId) throw new Error('Order shop does not match this counter.');
+    const issue = getUpiPaymentIssue(current);
+    if (issue) throw new Error(issue);
+    if (!current.upiPayment?.utr) throw new Error('Ask the customer for their payment reference first.');
+    return { paymentStatus: 'paid', upiPayment: { ...current.upiPayment, confirmedAt: new Date().toISOString() } };
+  });
+  try { saveOrderToLocal(updated); } catch (error) { console.warn('Payment saved online; local cache unavailable:', error); }
+  return updated;
 }
 
 export function updateOrderStatus(orderId: string, status: OrderStatus, note?: string): Order | undefined {

@@ -38,6 +38,8 @@ export interface Shop {
   openingHours: string;
   pricing: ShopPricing;
   acceptedPaymentModes: PaymentChoice[];
+  upiId?: string;
+  upiPayeeName?: string;
   retentionMinutes: number;
   qrCodeUrl: string;
   // Multi-Store & SaaS Owner Management:
@@ -88,6 +90,16 @@ export interface OrderAttachment {
   storagePath?: string;
 }
 
+export interface UpiPayment {
+  upiId: string;
+  payeeName: string;
+  amount: number;
+  reference: string;
+  utr?: string;
+  submittedAt?: string;
+  confirmedAt?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: number;
@@ -104,6 +116,7 @@ export interface Order {
   config: PrintJobConfig;
   paymentMode: PaymentChoice;
   paymentStatus: PaymentStatus;
+  upiPayment?: UpiPayment;
   status: OrderStatus;
   statusHistory: StatusHistoryEntry[];
   rejectionReason?: string;

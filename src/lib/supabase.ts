@@ -122,9 +122,9 @@ export async function listManagedShops(): Promise<PublishedShop[]> {
 
 function customerShopProfile(shop: Shop) {
   const { id, slug, name, tagline, location, phone, isOpen, openingHours, pricing,
-    acceptedPaymentModes, retentionMinutes, qrCodeUrl } = shop;
+    acceptedPaymentModes, retentionMinutes, qrCodeUrl, upiId, upiPayeeName } = shop;
   return { id, slug, name, tagline, location, phone, isOpen, openingHours, pricing,
-    acceptedPaymentModes, retentionMinutes, qrCodeUrl };
+    acceptedPaymentModes, retentionMinutes, qrCodeUrl, upiId: upiId?.trim() || '', upiPayeeName: upiPayeeName?.trim() || '' };
 }
 
 export async function publishNewShop(shop: Shop, ownerEmail: string) {

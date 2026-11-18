@@ -14,6 +14,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
+import { UpiQrCode } from '../ui/UpiQrCode';
+import { buildUpiUri, isValidUpiId } from '../../lib/upi';
 import { saveShop } from '../../lib/store';
 import { broadcastToCloud, getShopCloudTopic } from '../../lib/cloudSync';
 import type { Shop } from '../../types';
@@ -43,8 +45,11 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
     setIsSaving(true);
     setSaveError(null);
     try {
-      await saveShop(formData);
-      onShopUpdated(formData);
+      const updated = { ...formData, upiId: formData.upiId?.trim() || '', upiPayeeName: formData.upiPayeeName?.trim() || formData.name };
+      if (updated.upiId && !isValidUpiId(updated.upiId)) throw new Error('Enter a valid UPI ID, such as shop@bank.');
+      await saveShop(updated);
+      setFormData(updated);
+      onShopUpdated(updated);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2500);
     } catch (error) {
@@ -134,6 +139,22 @@ export const ShopSettings: React.FC<ShopSettingsProps> = ({ shop, onShopUpdated 
             When customers scan your QR code on any smartphone via cellular data or WiFi, their order is broadcast over this cloud channel directly into your shop queue in less than 200 milliseconds.
           </p>
         </div>
+      </Card>
+
+      <Card className="space-y-5">
+        <div><h2 className="text-lg text-white">UPI payments</h2><p className="mt-1 text-xs text-[#bcbcbc]">Receive customer payments directly into this shop’s UPI account.</p></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Input label="Shop UPI ID" placeholder="yourshop@bank" value={formData.upiId || ''} autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            onChange={e => { setIsSaved(false); setFormData({ ...formData, upiId: e.target.value }); }}
+            error={formData.upiId?.trim() && !isValidUpiId(formData.upiId) ? 'Use a UPI ID such as shop@bank, without spaces.' : undefined}
+            helperText="Leave blank to offer payment at the counter only." />
+          <Input label="Payment recipient name" placeholder={formData.name} value={formData.upiPayeeName || ''} maxLength={100}
+            onChange={e => { setIsSaved(false); setFormData({ ...formData, upiPayeeName: e.target.value }); }} helperText="Use the recipient name associated with this UPI account." />
+        </div>
+        {formData.upiId && isValidUpiId(formData.upiId) && <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center border-t border-[#3d3d3d] pt-5">
+          <UpiQrCode uri={buildUpiUri({ upiId: formData.upiId, payeeName: formData.upiPayeeName?.trim() || formData.name })} downloadable />
+          <div className="space-y-2 text-xs text-[#bcbcbc]"><p className="text-white font-medium">Your shop’s payment QR</p><p>Preview only: customers enter their amount for this QR. Each online order gets its own QR with the exact price and payment reference.</p><p>Check the recipient in your UPI app before saving. Changes apply to new orders.</p><p>The counter verifies receipt of UPI payments before marking them paid.</p></div>
+        </div>}
       </Card>
 
       {/* Availability Toggle */}

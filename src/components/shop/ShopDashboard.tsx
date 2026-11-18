@@ -21,6 +21,7 @@ import { PrintHandoffModal } from './PrintHandoffModal';
 import { DigitalCounterBill } from '../customer/DigitalCounterBill';
 import {
   getOrders,
+  confirmUpiPayment,
   updateOrderStatus,
   rejectOrder,
   requestClarification,
@@ -35,6 +36,7 @@ import { listenToStoreOrdersFromFirestore } from '../../lib/firebase';
 import { listenToCloud } from '../../lib/cloudSync';
 import { getOrderAttachments, saveAttachment, type DownloadableAttachment } from '../../lib/orderAttachments';
 import type { Order, OrderStatus, Shop } from '../../types';
+import { getUpiPaymentIssue, paymentLabel } from '../../lib/upi';
 
 interface ShopDashboardProps {
   shop: Shop;
@@ -218,6 +220,15 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
     } catch {
       showToast('Could not delete the order files. Please try again.');
     }
+  };
+
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const handleConfirmPayment = async (orderId: string) => {
+    if (isConfirmingPayment) return;
+    setIsConfirmingPayment(true);
+    try { const updated = await confirmUpiPayment(orderId); setOrders(previous => previous.map(order => order.id === updated.id ? updated : order)); showToast('Payment marked received by the shop.'); }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not confirm payment.'); }
+    finally { setIsConfirmingPayment(false); }
   };
 
   const selectOrder = (id: string) => {
@@ -425,7 +436,7 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                       <span className={`text-[10px] font-medium block ${
                         order.paymentStatus === 'paid' ? 'text-[#6ed5a3]' : 'text-[#f3ba83]'
                       }`}>
-                        {order.paymentStatus === 'paid' ? 'Paid Online' : 'Pay at Counter'}
+                        {paymentLabel(order)}
                       </span>
                     </div>
 
@@ -618,10 +629,20 @@ export const ShopDashboard: React.FC<ShopDashboardProps> = ({ shop }) => {
                 <div className="text-right">
                   <span className="text-[10px] uppercase font-bold text-[#b0b0b0]">Payment Mode</span>
                   <div className={`text-xs font-bold ${selectedOrder.paymentStatus === 'paid' ? 'text-[#6ed5a3]' : 'text-[#f3ba83]'}`}>
-                    {selectedOrder.paymentStatus === 'paid' ? 'PAID ONLINE [SANDBOX]' : 'PAY AT COUNTER'}
+                    {paymentLabel(selectedOrder)}
                   </div>
                 </div>
               </div>
+
+              {selectedOrder.upiPayment && <section aria-label="UPI payment details" className="border border-[#3d3d3d] p-4 space-y-3 text-xs">
+                <h3 className="text-white">UPI payment details</h3>
+                <p className="text-[#bcbcbc] break-all">Recipient: <strong className="text-white">{selectedOrder.upiPayment.upiId}</strong></p>
+                <p className="text-[#bcbcbc]">Requested: ₹{selectedOrder.upiPayment.amount.toFixed(2)}</p>
+                <p className="text-[#bcbcbc] break-all">UPI reference: <strong className="text-white">{selectedOrder.upiPayment.utr || 'Not submitted'}</strong></p>
+                {selectedOrder.paymentStatus !== 'paid' && <><p className="text-[#f3ba83]">{getUpiPaymentIssue(selectedOrder) || 'Check this reference, recipient and exact amount in your bank / UPI account before confirming receipt.'}</p>
+                  <Button variant="secondary" className="w-full" disabled={isConfirmingPayment || !selectedOrder.upiPayment.utr || Boolean(getUpiPaymentIssue(selectedOrder))} onClick={() => void handleConfirmPayment(selectedOrder.id)}>{isConfirmingPayment ? 'Saving…' : `Confirm receipt of ₹${selectedOrder.upiPayment.amount.toFixed(2)}`}</Button></>}
+                {selectedOrder.upiPayment.confirmedAt && <p className="text-[#6ed5a3]">Receipt confirmed by the shop.</p>}
+              </section>}
 
               {/* Core Workflow Actions */}
               <div className="space-y-2 pt-2 border-t border-[#3d3d3d]">

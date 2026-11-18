@@ -1,201 +1,67 @@
-import React, { useState } from 'react';
-import { CreditCard, QrCode, ShieldCheck, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Copy, X } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { UpiQrCode } from '../ui/UpiQrCode';
+import { buildUpiUri, getUpiPaymentIssue } from '../../lib/upi';
+import type { Order } from '../../types';
 
 interface PaymentModalProps {
-  amount: number;
-  customerName: string;
-  onSuccess: (paymentId: string) => void;
+  order: Order;
+  onSubmitReference: (utr: string) => Promise<void>;
   onCancel: () => void;
-  onSwitchToCounter: () => void;
 }
 
-export const PaymentModal: React.FC<PaymentModalProps> = ({
-  amount,
-  customerName,
-  onSuccess,
-  onCancel,
-  onSwitchToCounter,
-}) => {
-  const [method, setMethod] = useState<'upi' | 'card'>('upi');
-  const [upiId, setUpiId] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+export function PaymentModal({ order, onSubmitReference, onCancel }: PaymentModalProps) {
+  const [utr, setUtr] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleSimulatePayment = (willSucceed: boolean) => {
-    setIsProcessing(true);
-    setError(null);
-
-    setTimeout(() => {
-      setIsProcessing(false);
-      if (willSucceed) {
-        onSuccess(`PAY-SIM-${Math.floor(100000 + Math.random() * 900000)}`);
-      } else {
-        setError('Simulation: Card/UPI bank authorization declined. Please retry or choose counter payment.');
+  const [copied, setCopied] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef(onCancel);
+  const busyRef = useRef(isSaving);
+  useEffect(() => { cancelRef.current = onCancel; busyRef.current = isSaving; }, [onCancel, isSaving]);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busyRef.current) cancelRef.current();
+      if (event.key === 'Tab') {
+        const elements = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled)');
+        if (!elements?.length) return;
+        const first = elements[0], last = elements[elements.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
-    }, 1200);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-[#242424] rounded-none border border-[#3d3d3d] shadow-none max-w-md w-full overflow-hidden">
-        
-        {/* Banner with clear PROTOTYPE indication */}
-        <div className="bg-[#181818] text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-[#ffffff]" />
-            <div>
-              <h3 className="text-sm font-semibold">Online Payment Gateway</h3>
-              <span className="text-[10px] font-mono tracking-wider text-[#969696] uppercase">
-                [PROTOTYPE SANDBOX]
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="text-[#969696] hover:text-white p-1 rounded cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* Amount Due Card */}
-          <div className="p-4 rounded-none bg-[#1c1c1c] border border-[#3d3d3d] flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[#b0b0b0]">Payable Amount</p>
-              <p className="text-2xl font-bold text-[#ffffff]">₹{amount.toFixed(2)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-[#b0b0b0]">Customer</p>
-              <p className="text-sm font-medium text-[#ffffff] truncate max-w-[140px]">{customerName || 'Walk-in'}</p>
-            </div>
-          </div>
-
-          {/* Payment Method Selector */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setMethod('upi')}
-              className={`p-3 text-left border rounded-none transition-all cursor-pointer ${
-                method === 'upi'
-                  ? 'border-[#da291c] bg-[#303030]/30 ring-1 ring-[#da291c]'
-                  : 'border-[#3d3d3d] hover:bg-[#303030]'
-              }`}
-            >
-              <QrCode className="w-5 h-5 text-[#ff8278] mb-1.5" />
-              <p className="text-xs font-semibold text-[#ffffff]">UPI / QR Code</p>
-              <p className="text-[11px] text-[#b0b0b0]">GPay, PhonePe, Paytm</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMethod('card')}
-              className={`p-3 text-left border rounded-none transition-all cursor-pointer ${
-                method === 'card'
-                  ? 'border-[#da291c] bg-[#303030]/30 ring-1 ring-[#da291c]'
-                  : 'border-[#3d3d3d] hover:bg-[#303030]'
-              }`}
-            >
-              <CreditCard className="w-5 h-5 text-[#ff8278] mb-1.5" />
-              <p className="text-xs font-semibold text-[#ffffff]">Debit / Credit Card</p>
-              <p className="text-[11px] text-[#b0b0b0]">Visa, Mastercard, RuPay</p>
-            </button>
-          </div>
-
-          {method === 'upi' ? (
-            <div className="space-y-3">
-              <div className="flex flex-col items-center justify-center p-4 border border-[#3d3d3d] rounded-none bg-[#242424] text-center">
-                <div className="w-32 h-32 bg-[#1c1c1c] border border-[#606060] rounded-none flex flex-col items-center justify-center p-2 mb-2">
-                  <QrCode className="w-20 h-20 text-[#ffffff]" />
-                  <span className="text-[9px] font-mono text-[#b0b0b0]">SCAN WITH ANY UPI APP</span>
-                </div>
-                <p className="text-xs text-[#bcbcbc]">Or enter UPI ID</p>
-                <input
-                  type="text"
-                  placeholder="e.g. mobile@upi"
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  className="mt-1 w-full max-w-xs text-center text-xs h-9 border border-[#606060] rounded-none px-2"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              <input
-                type="text"
-                placeholder="Card Number: 4532 •••• •••• 8892"
-                disabled
-                className="w-full text-xs h-9 border border-[#606060] rounded-none px-3 bg-[#303030]"
-                value="4532 •••• •••• 8892 (Demo Card)"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="MM/YY"
-                  disabled
-                  className="w-full text-xs h-9 border border-[#606060] rounded-none px-3 bg-[#303030]"
-                  value="12/28"
-                />
-                <input
-                  type="text"
-                  placeholder="CVV"
-                  disabled
-                  className="w-full text-xs h-9 border border-[#606060] rounded-none px-3 bg-[#303030]"
-                  value="•••"
-                />
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="p-3 bg-[#402321] border border-[#e03131]/30 rounded-none flex items-start gap-2 text-xs text-[#ff8278]">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Action Simulation Buttons */}
-          <div className="space-y-2 pt-2 border-t border-[#3d3d3d]">
-            <Button
-              variant="primary"
-              className="w-full"
-              disabled={isProcessing}
-              onClick={() => handleSimulatePayment(true)}
-              icon={isProcessing ? undefined : <CheckCircle2 className="w-4 h-4" />}
-            >
-              {isProcessing ? 'Authorizing Mock Transaction...' : `Simulate Successful Payment (₹${amount.toFixed(2)})`}
-            </Button>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="flex-1 text-xs"
-                disabled={isProcessing}
-                onClick={() => handleSimulatePayment(false)}
-              >
-                Test Failed Payment
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 text-xs text-[#bcbcbc]"
-                disabled={isProcessing}
-                onClick={onSwitchToCounter}
-              >
-                Pay Cash/Counter instead
-              </Button>
-            </div>
-          </div>
-
-          <p className="text-[11px] text-center text-[#969696]">
-            🔒 Real deployment uses webhook-verified settlement through Stripe/Razorpay.
-          </p>
-
-        </div>
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', onKey); previousFocus?.focus(); };
+  }, []);
+  const payment = order.upiPayment;
+  const issue = getUpiPaymentIssue(order);
+  const uri = !issue && payment ? buildUpiUri(payment) : null;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs" onClick={e => { if (e.target === e.currentTarget && !isSaving) onCancel(); }}>
+    <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="upi-payment-title" tabIndex={-1} className="bg-[#242424] border border-[#606060] max-w-md w-full max-h-[90dvh] overflow-y-auto outline-none">
+      <div className="sticky top-0 z-10 bg-[#181818] p-4 border-b border-[#3d3d3d] flex items-center justify-between gap-3">
+        <div><h2 id="upi-payment-title" className="text-base text-white">Pay the shop with UPI</h2><p className="text-xs text-[#bcbcbc] mt-1">Order #{order.orderNumber} · saved before payment</p></div>
+        <button type="button" aria-label="Close payment" className="p-2 text-[#bcbcbc]" disabled={isSaving} onClick={onCancel}><X size={20} /></button>
+      </div>
+      <div className="p-5 space-y-5">
+        {issue ? <p role="alert" className="text-sm text-[#f3ba83]">{issue}</p> : payment && <>
+          <div className="text-center"><p className="text-xs text-[#bcbcbc]">Pay directly to {payment.payeeName}</p><p className="text-3xl text-white mt-2">₹{payment.amount.toFixed(2)}</p></div>
+          {uri && !payment.utr && <><UpiQrCode uri={uri} downloadable /><a href={uri} className="qp-button flex items-center justify-center min-h-12 px-4 bg-[#da291c] text-white text-center">Open UPI app to pay ₹{payment.amount.toFixed(2)}</a><p className="text-xs text-[#bcbcbc] text-center">Use a UPI app on this phone, or scan the QR from another device. Check the recipient and amount before confirming.</p></>}
+          <div className="border border-[#3d3d3d] p-3 flex items-center gap-2"><div className="min-w-0 flex-1"><p className="text-[10px] uppercase tracking-wider text-[#bcbcbc]">Shop UPI ID</p><p className="text-sm text-white break-all">{payment.upiId}</p></div><Button size="sm" variant="secondary" aria-label="Copy shop UPI ID" icon={<Copy size={14} />} onClick={() => { void navigator.clipboard.writeText(payment.upiId).then(() => setCopied(true)).catch(() => setError('Could not copy. Select the UPI ID above to copy it.')); }}>{copied ? 'Copied' : 'Copy'}</Button></div>
+          {payment.utr ? <p role="status" className="text-sm text-[#f3ba83]">Reference {payment.utr} submitted. The shop is checking receipt of your payment. Do not pay again.</p> : <form className="space-y-3 border-t border-[#3d3d3d] pt-4" onSubmit={e => { e.preventDefault(); if (isSaving) return; setError(null); if (!/^\d{12}$/.test(utr.trim())) { setError('Enter the 12-digit UPI reference from your successful transaction.'); return; } setIsSaving(true); void onSubmitReference(utr.trim()).catch(e => setError(e instanceof Error ? e.message : 'Could not save your reference. Try again; do not pay again.')).finally(() => setIsSaving(false)); }}>
+            <label htmlFor="upi-utr" className="block text-xs text-white font-medium">Already paid? Enter the UPI transaction reference</label>
+            <input id="upi-utr" inputMode="numeric" autoComplete="off" maxLength={12} placeholder="12-digit UPI reference / UTR" value={utr} onChange={e => setUtr(e.target.value)} className="w-full px-3 py-3 bg-[#181818] border border-[#606060] text-white" aria-describedby="upi-reference-help" disabled={isSaving} />
+            <p id="upi-reference-help" className="text-xs text-[#bcbcbc]">Find this in your completed payment’s details. The shop checks this reference before marking the order paid.</p>
+            <Button type="submit" className="w-full" disabled={isSaving}>{isSaving ? 'Saving reference…' : 'Submit payment reference'}</Button>
+          </form>}
+        </>}
+        {error && <p role="alert" className="text-xs text-[#ff8278]">{error}</p>}
+        <Button variant="ghost" className="w-full" disabled={isSaving} onClick={onCancel}>Back to my order</Button>
       </div>
     </div>
-  );
-};
+  </div>;
+}

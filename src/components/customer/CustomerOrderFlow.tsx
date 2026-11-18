@@ -23,7 +23,8 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
-import { PaymentModal } from './PaymentModal';
+import { isValidUpiId } from '../../lib/upi';
+import { countPdfPages } from '../../lib/pdfPages';
 import { MagneticDropZone } from './MagneticDropZone';
 import { parsePageRange } from '../../lib/pageRangeParser';
 import { createOrder } from '../../lib/store';
@@ -79,7 +80,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Payment Modal & Confirmation
-  const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
+  const acceptsUpi = Boolean(shop.upiId && isValidUpiId(shop.upiId) && shop.acceptedPaymentModes.includes('online'));
   const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -167,17 +168,13 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         reader.readAsDataURL(f);
       });
 
+      if (!dataUrl) throw new Error(`Could not read ${f.name}. Please select it again.`);
       let detectedPages = 1;
-      if (isPdf && dataUrl) {
+      if (isPdf) {
         try {
-          const matches = dataUrl.match(/\/Type\s*\/Page\b/g);
-          if (matches && matches.length > 0) {
-            detectedPages = matches.length;
-          } else {
-            detectedPages = Math.max(1, Math.min(60, Math.round(f.size / 65000)));
-          }
+          detectedPages = await countPdfPages(await f.arrayBuffer());
         } catch {
-          detectedPages = 1;
+          throw new Error(`Could not count pages in ${f.name}. Upload a readable PDF without a password so the print price can be calculated correctly.`);
         }
       }
 
@@ -196,6 +193,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
   };
 
   const handleDropZoneFilesChange = async (filesFromZone: File[]) => {
+    if (isPreparingFiles) return;
     if (filesFromZone.length === 0) {
       setDocList([]);
       return;
@@ -206,6 +204,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
       setDocList(processed);
       const sumPgs = processed.reduce((sum, d) => sum + d.detectedPages, 0);
       setCustomRange(`1-${sumPgs || 1}`);
+    } catch (error) {
+      setDocList([]);
+      setUploadError(error instanceof Error ? error.message : 'Could not read these documents. Please try again.');
     } finally {
       setIsPreparingFiles(false);
     }
@@ -224,6 +225,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         setCustomRange(`1-${sumPgs || 1}`);
         return next;
       });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Could not read these documents. Please try again.');
     } finally {
       setIsPreparingFiles(false);
     }
@@ -266,8 +269,9 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmitOrder = async (isOnlinePaid = false) => {
+  const handleSubmitOrder = async () => {
     if (isSubmitting || isPreparingFiles || !validateForm()) return;
+    if (paymentChoice === 'online' && !acceptsUpi) { setSubmissionError('This shop has not enabled UPI. Choose Pay at Counter.'); return; }
 
     const config: PrintJobConfig = {
       copies,
@@ -303,8 +307,12 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
         attachments: uploaded,
         detectedPageCount: totalPagesInDoc,
         config,
-        paymentMode: isOnlinePaid ? 'online' : 'counter',
-        paymentStatus: isOnlinePaid ? 'paid' : 'pay_at_counter',
+        paymentMode: paymentChoice,
+        paymentStatus: paymentChoice === 'online' ? 'pending' : 'pay_at_counter',
+        ...(paymentChoice === 'online' ? { upiPayment: {
+          upiId: shop.upiId!.trim(), payeeName: shop.upiPayeeName?.trim() || shop.name,
+          amount: estimatedSubtotal, reference: crypto.randomUUID().replaceAll('-', ''),
+        } } : {}),
       });
     } catch (error) {
       void removeOrderAttachmentPaths(uploaded.map(file => file.storagePath)).catch(console.warn);
@@ -376,7 +384,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
             <div className="flex justify-between">
               <span className="text-[#b0b0b0]">Payment:</span>
               <span className="font-semibold text-[#ff8278]">
-                {submittedOrder.paymentStatus === 'paid' ? 'Paid Online [Sandbox]' : 'Pay at Counter'}
+                {submittedOrder.paymentMode === 'online' ? 'UPI payment pending' : 'Pay at Counter'}
               </span>
             </div>
           </div>
@@ -540,6 +548,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                   maxSize={maxOrderFileSize}
                   multiple={true}
                   onFilesChange={handleDropZoneFilesChange}
+                  files={[]}
                 />
 
                 {/* Quick Demo Preloaded Files */}
@@ -670,7 +679,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
             )}
 
             {uploadError && (
-              <p className="text-xs text-[#ff8278] flex items-center gap-1.5 mt-2">
+              <p role="alert" className="text-xs text-[#ff8278] flex items-center gap-1.5 mt-2">
                 <AlertCircle className="w-3.5 h-3.5" />
                 {uploadError}
               </p>
@@ -999,6 +1008,8 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentChoice('online')}
+                disabled={!acceptsUpi}
+                aria-describedby={!acceptsUpi ? 'upi-unavailable' : undefined}
                 className={`p-3 border rounded-none text-left transition-all cursor-pointer ${
                   paymentChoice === 'online'
                     ? 'border-[#da291c] bg-[#303030]/30 ring-1 ring-[#da291c]'
@@ -1007,12 +1018,13 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#ffffff]">Pay Online</span>
-                  <span className="text-[9px] font-mono text-[#ff8278] bg-[#303030] px-1 rounded">PROTOTYPE</span>
+                  <span className="text-[9px] font-mono text-[#ff8278] bg-[#303030] px-1 rounded">UPI</span>
                 </div>
-                <p className="text-[11px] text-[#b0b0b0] mt-0.5">Instant sandbox UPI/Card</p>
+                <p className="text-[11px] text-[#b0b0b0] mt-0.5">{acceptsUpi ? 'Pay the shop by UPI / QR' : 'Not enabled by this shop'}</p>
               </button>
             </div>
 
+            {!acceptsUpi && <p id="upi-unavailable" className="text-xs text-[#bcbcbc]">This shop currently accepts payment at the counter.</p>}
             {/* Submit Button */}
             <div className="pt-2">
               <Button
@@ -1021,11 +1033,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                 disabled={!shop.isOpen || isSubmitting || isPreparingFiles}
                 onClick={() => {
                   if (validateForm()) {
-                    if (paymentChoice === 'online') {
-                      setShowPaymentModal(true);
-                    } else {
-                      handleSubmitOrder(false);
-                    }
+                    void handleSubmitOrder();
                   }
                 }}
                 icon={<ChevronRight className="w-5 h-5" />}
@@ -1034,7 +1042,7 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
                   ? `Proceed to Payment (₹${estimatedSubtotal.toFixed(2)})`
                   : `Submit Print Order (₹${estimatedSubtotal.toFixed(2)})`}
               </Button>
-              {submissionError && <p role="alert" className="mt-2 text-xs text-red-700">{submissionError}</p>}
+              {submissionError && <p role="alert" className="mt-2 text-xs text-[#ff8278]">{submissionError}</p>}
             </div>
           </Card>
 
@@ -1050,23 +1058,6 @@ export const CustomerOrderFlow: React.FC<CustomerOrderFlowProps> = ({
 
       </div>
 
-      {/* Online Payment Modal */}
-      {showPaymentModal && (
-        <PaymentModal
-          amount={estimatedSubtotal}
-          customerName={customerName}
-          onSuccess={() => {
-            setShowPaymentModal(false);
-            handleSubmitOrder(true);
-          }}
-          onCancel={() => setShowPaymentModal(false)}
-          onSwitchToCounter={() => {
-            setShowPaymentModal(false);
-            setPaymentChoice('counter');
-            handleSubmitOrder(false);
-          }}
-        />
-      )}
 
     </div>
   );
